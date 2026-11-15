@@ -387,3 +387,7 @@ The PRO DJ LINK details come from Deep Symmetry's
 [DJ Link Ecosystem Analysis](https://djl-analysis.deepsymmetry.org/), the
 work behind Beat Link Trigger. Night Owl is not affiliated with or
 endorsed by AlphaTheta / Pioneer DJ or Signify / Philips Hue.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
