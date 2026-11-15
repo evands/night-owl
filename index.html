@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CDJ Hue Sync</title>
+<style>
+  :root { --bg:#0e0f13; --card:#181a21; --line:#2a2d38; --text:#eceef4; --dim:#9097a8; --accent:#7c5cff; --ok:#3ddc97; --warn:#ffb454; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 18px; margin: 4px 0 12px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 0 0 10px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  .now { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .bpm { font-size: 40px; font-weight: 700; font-variant-numeric: tabular-nums; line-height:1; }
+  .bpm small { font-size: 13px; font-weight: 400; color: var(--dim); margin-left: 4px; }
+  .dots { display:flex; gap:8px; }
+  .dot { width:22px; height:22px; border-radius:50%; background:#2a2d38; }
+  .dot.on { background: var(--accent); box-shadow: 0 0 12px var(--accent); }
+  .dot.on.one { background:#fff; box-shadow: 0 0 14px #fff; }
+  .meta { color: var(--dim); font-size: 13px; margin-top: 10px; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid var(--line); margin: 2px 4px 2px 0; font-size:12px; color:var(--text); }
+  .pill.live { border-color: var(--ok); color: var(--ok); }
+  .pill.warn { border-color: var(--warn); color: var(--warn); }
+  .row { padding: 8px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; }
+  .row label { display:flex; justify-content:space-between; gap:12px; font-weight:600; }
+  .row output { color: var(--accent); font-variant-numeric: tabular-nums; font-weight:600; white-space:nowrap; }
+  .help { color: var(--dim); font-size: 12.5px; margin-top: 2px; }
+  input[type=range] { width:100%; margin: 8px 0 2px; accent-color: var(--accent); }
+  select { max-width: 62%; min-width: 0; text-overflow: ellipsis; }
+  .row label > span { flex: 1; }
+  select, button { background:#22252f; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:7px 10px; font: inherit; }
+  button { cursor:pointer; }
+  .strip { height: 22px; border-radius: 6px; margin-top: 8px; border:1px solid var(--line); }
+  .swatches { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; align-items:center; }
+  .sw { display:flex; align-items:center; gap:2px; }
+  .sw input[type=color] { width:44px; height:36px; padding:0; border:1px solid var(--line); border-radius:8px; background:none; }
+  .sw button { padding:2px 7px; }
+  .hidden { display:none; }
+  .prow { display:flex; align-items:center; gap:12px; }
+  .prow select { flex:1; max-width:none; font-size:16px; font-weight:600; padding:9px 10px; }
+  #pmod { color:var(--warn); font-size:12.5px; white-space:nowrap; }
+  .pbtn { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 8px; }
+  .pbtn button:disabled { opacity:.4; cursor:default; }
+  .top { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+  #vopen { background:linear-gradient(135deg,#7c5cff,#ff5ca8); border:0; color:#fff; font-weight:600; padding:8px 14px; }
+  #viz { position:fixed; inset:0; z-index:50; background:#000; overflow:hidden; cursor:none; }
+  #viz.hud { cursor:default; }
+  #vizc { width:100%; height:100%; display:block; }
+  .vhud { position:absolute; left:0; right:0; bottom:0; padding:28px 32px calc(28px + env(safe-area-inset-bottom)); display:flex; align-items:flex-end; gap:22px; flex-wrap:wrap; color:#fff; text-shadow:0 2px 18px #000a; background:linear-gradient(transparent,#0008); opacity:0; transition:opacity .8s; pointer-events:none; }
+  #viz.hud .vhud, #viz.hud #vclose { opacity:1; }
+  .vbpm { font-size:clamp(40px,9vw,96px); font-weight:700; line-height:.9; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+  .vbpm small { font-size:.22em; font-weight:500; opacity:.7; margin-left:.4em; letter-spacing:.12em; }
+  .vdots { display:flex; gap:10px; padding-bottom:.6em; }
+  .vdots i { width:14px; height:14px; border-radius:50%; background:#fff3; transition:background .12s, transform .12s; }
+  .vdots i.on { background:#fff; transform:scale(1.5); box-shadow:0 0 18px #fff; }
+  .vphr { font-size:clamp(14px,2.4vw,22px); letter-spacing:.14em; text-transform:uppercase; opacity:.85; padding-bottom:.5em; margin-left:auto; }
+  .vctl { display:flex; gap:8px; padding-bottom:.35em; pointer-events:none; }
+  #viz.hud .vctl { pointer-events:auto; }
+  .vctl button { background:#0007; border:1px solid #fff4; color:#fff; border-radius:999px; padding:8px 16px; font-size:15px; }
+  .vscene { position:absolute; top:calc(22px + env(safe-area-inset-top)); left:28px; color:#fff; font-size:clamp(13px,2vw,18px); letter-spacing:.22em; text-transform:uppercase; text-shadow:0 2px 14px #000c; opacity:0; transition:opacity 1s; pointer-events:none; }
+  .vscene.show { opacity:.9; }
+  #vclose { position:absolute; top:calc(14px + env(safe-area-inset-top)); right:16px; width:44px; height:44px; border-radius:50%; background:#0006; border:1px solid #fff3; color:#fff; font-size:24px; line-height:1; padding:0; opacity:0; transition:opacity .8s; }
+  .vmsg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; padding:24px; text-align:center; }
+  .alert { background:#3a1418; border:1px solid #ff5c6c; color:#ffd9dd; border-radius:12px; padding:12px 16px; margin-bottom:12px; }
+  .map { position:relative; width:100%; max-width:340px; aspect-ratio:1; margin:10px auto 4px; background:#0b0c10; border:1px solid var(--line); border-radius:10px; cursor:crosshair; overflow:hidden; }
+  .lamp { position:absolute; width:16px; height:16px; margin:-8px 0 0 -8px; border-radius:50%; border:1px solid #0008; }
+  .booth { position:absolute; width:26px; height:26px; margin:-13px 0 0 -13px; border-radius:50%; border:2px dashed var(--dim); display:none; }
+  footer { display:flex; justify-content:space-between; align-items:center; color:var(--dim); font-size:12.5px; padding: 4px 2px 24px; gap:12px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="top"><h1>CDJ Hue Sync</h1><button id="vopen" title="Full-screen visualizer in the lights' colours">Visualizer</button></div>
+  <div id="alert" class="alert hidden"><b>No decks or mixer on the network.</b> The lights are idling until they come back. Check that the decks are on and their network switch is cabled to the router; see “If the decks do not show up” in the README.</div>
+
+  <div class="card">
+    <div class="now">
+      <div class="bpm"><span id="bpm">--</span><small>BPM</small></div>
+      <div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+      <div id="following" style="color:var(--dim)">Waiting for a deck</div>
+    </div>
+    <div class="meta" id="gear"></div>
+    <div class="meta" id="lights"></div>
+  </div>
+
+  <div class="card">
+    <h2>Preset</h2>
+    <div class="prow"><select id="preset" aria-label="Preset"></select><span id="pmod"></span></div>
+    <div class="pbtn">
+      <button id="psave">Save</button><button id="psaveas">Save as…</button><button id="prename">Rename…</button><button id="pdelete">Delete</button>
+    </div>
+    <div class="help">A preset is a saved look: colours, effect, brightness and pulse shape. Choosing one changes the lights at once. Light lead and the deck options stay as they are, because they belong to this setup, not to a look.</div>
+  </div>
+
+  <div id="groups"></div>
+
+  <footer>
+    <span id="saved">Changes apply instantly and are saved.</span>
+    <button id="reset">Reset to defaults</button>
+  </footer>
+</main>
+
+<div id="viz" class="hidden">
+  <canvas id="vizc"></canvas>
+  <div class="vscene" id="vscene"></div>
+  <div class="vhud" id="vhud">
+    <div class="vbpm"><span id="vbpm">--</span><small>BPM</small></div>
+    <div class="vdots"><i></i><i></i><i></i><i></i></div>
+    <div class="vphr" id="vphr"></div>
+    <div class="vctl">
+      <button id="vprev" aria-label="Previous scene">‹</button>
+      <button id="vhold">Hold scene</button>
+      <button id="vnext" aria-label="Next scene">›</button>
+    </div>
+  </div>
+  <button id="vclose" aria-label="Close visualizer">×</button>
+  <div class="vmsg hidden" id="vmsg"></div>
+</div>
+
+<script src="/viz.js"></script>
+<script>
+const pct = v => Math.round(v * 100) + '%';
+const GROUPS = [
+  { title: 'Timing', items: [
+    { k:'lead_ms', label:'Light lead', min:-100, max:400, step:5, fmt:v=>v+' ms', help:'Fires the lights this early to cancel Hue lag. Raise it if the lights feel late, lower it if they feel early.' },
+    { k:'fade_ms', label:'Fade time', min:20, max:2000, step:10, fmt:v=>v+' ms', help:'How long each pulse takes to fall back to the floor level.' },
+    { k:'attack_ms', label:'Attack', min:0, max:500, step:5, fmt:v=>v+' ms', help:'Ramp-up before each beat. 0 snaps on.' },
+    { k:'stop_beats', label:'Stop after', min:1.5, max:8, step:0.5, fmt:v=>v+' beats', help:'Silent beats before a deck counts as stopped. Lower reacts faster; higher rides out packets lost on Wi-Fi.' },
+  ]},
+  { title: 'Brightness', items: [
+    { k:'brightness', label:'Peak brightness', min:0, max:1, step:0.01, fmt:pct, help:'Top of each pulse.' },
+    { k:'floor', label:'Floor', min:0, max:1, step:0.01, fmt:pct, help:'Level the lights rest at between pulses.' },
+    { k:'offbeat_level', label:'Beats 2-4 strength', min:0, max:1, step:0.01, fmt:pct, help:'How hard beats 2, 3 and 4 hit compared with the downbeat.' },
+  ]},
+  { title: 'Movement', items: [
+    { k:'effect', label:'Effect', type:'select', options:[['auto','Auto (rotate)'],['pulse','Pulse: whole room together'],['wave','Wave: each beat rolls across the room'],['alternate','Alternate: neighbouring lights trade beats'],['sides','Sides: two halves of the room trade beats'],['chase','Chase: four zones, one per beat'],['bounce','Bounce: the lit zone runs across and back'],['sparkle','Sparkle: a new scattering of lights each beat']] },
+    { k:'auto_bars', label:'Auto: bars per effect', type:'select', num:true, options:[[2,'2'],[4,'4'],[8,'8'],[16,'16'],[32,'32']] },
+    { k:'fill_bars', label:'Build-up and hit every', type:'select', num:true, options:[[0,'Off'],[8,'8 bars'],[16,'16 bars'],[32,'32 bars'],[64,'64 bars']], help:'In the last bar the pulses double, then double again, brightening toward white; the next downbeat lands as a white hit across the whole room. The visualizer builds and hits with it.' },
+    { k:'axis', label:'Direction of travel', type:'select', options:[['x','Left to right'],['y','Back to front'],['z','Floor to ceiling'],['radial','Outward from the DJ booth']], help:'Uses each light\u2019s position in the Hue Entertainment area. Waves, chases, sides and the colour spread all follow it.' },
+    { k:'reverse', label:'Reverse direction', type:'check' },
+    { k:'wave_beats', label:'Wave travel time', min:0, max:1, step:0.05, fmt:v=>v+' beats', help:'How long a wave takes to cross the room. 0 is the same as Pulse.' },
+    { type:'map' },
+  ]},
+  { title: 'Colour', items: [
+    { k:'color_mode', label:'Colours from', type:'select', options:[['range','Hue range'],['palette','Picked colours']] },
+    { k:'hue_start', label:'Hue range start', min:0, max:360, step:1, fmt:v=>v+'°', only:'range' },
+    { k:'hue_end', label:'Hue range end', min:0, max:360, step:1, fmt:v=>v+'°', only:'range', help:'The range sweeps upward from start to end, wrapping through red if end is below start.' },
+    { k:'saturation', label:'Saturation', min:0, max:1, step:0.01, fmt:pct, only:'range' },
+    { k:'range_steps', label:'Colours in range', min:1, max:24, step:1, fmt:v=>v, only:'range' },
+    { k:'palette', label:'Picked colours', type:'palette', only:'palette' },
+    { type:'strip' },
+    { k:'color_beats', label:'Change colour every', type:'select', num:true, options:[[1,'beat'],[2,'2 beats'],[4,'bar'],[8,'2 bars'],[16,'4 bars'],[32,'8 bars'],[64,'16 bars']] },
+    { k:'color_fade_ms', label:'Colour crossfade', min:0, max:4000, step:50, fmt:v=>v+' ms', help:'0 snaps to the new colour on the beat.' },
+    { k:'color_spread', label:'Spread across room', min:0, max:1, step:0.01, fmt:pct, help:'0% makes the whole room one colour; 100% spreads the full set from left to right.' },
+  ]},
+  { title: 'Visualizer', items: [
+    { k:'viz_bars', label:'Change scene every', type:'select', num:true, options:[[4,'4 bars'],[8,'8 bars'],[16,'16 bars'],[32,'32 bars'],[64,'64 bars'],[0,'Never (change by hand)']], help:'The Visualizer button at the top opens it. Scenes change on a bar line and blend into each other; a drop cuts straight to a new one. In the visualizer, swipe or use the arrow keys to change scene, and Hold scene (or the space bar) to stay on one.' },
+  ]},
+  { title: 'When nothing is playing', items: [
+    { k:'idle_brightness', label:'Idle brightness', min:0, max:1, step:0.01, fmt:pct },
+    { k:'idle_cycle_s', label:'Idle colour drift', min:2, max:300, step:1, fmt:v=>v+' s', help:'Time to drift through all the colours.' },
+  ]},
+  { title: 'Deck selection', items: [
+    { k:'follow_on_air', label:'Only follow decks that are live on the mixer', type:'check', help:'Ignores a deck being cued in headphones. Turn off if there is no DJM on the link.' },
+  ]},
+  { title: 'Track structure and blends', items: [
+    { k:'deck_link', label:'Join the DJ network as a player', type:'check', id:'decklink', help:'Off, the program only listens. On, it announces itself to the decks as an extra player (the way Beat Link Trigger does), so they send it which deck is the tempo master, when a deck stops, and each track\u2019s phrase analysis. The lights then follow the leading deck through a blend, and changes land on the track\u2019s phrases. Only the copy driving the lights joins. If the decks ever feel sluggish with this on, turn it off: that happened once in early testing and has not been explained.' },
+    { type:'link' },
+    { k:'energy_follow', label:'Follow the track\u2019s energy', min:0, max:1, step:0.01, fmt:pct, help:'How much intros, breakdowns and other quiet sections dim the pulses. 0% keeps every section the same. Needs phrase analysis on the track.' },
+    { k:'drop_flash', label:'Flash on the drop', min:0, max:1, step:0.01, fmt:pct, help:'A white hit across the whole room on the first beat of a chorus. 0% turns it off.' },
+  ]},
+];
+
+// S is what the controls show; server is the last settings this page knows the
+// program has. Only the differences are sent, so a page that has been open a
+// while cannot overwrite a setting changed from another phone or computer.
+let S = null, server = null, saveTimer = null, lastEdit = 0;
+const copy = o => JSON.parse(JSON.stringify(o));
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const el = (tag, attrs = {}, ...kids) => { const e = document.createElement(tag); Object.assign(e, attrs); kids.forEach(k => e.append(k)); return e; };
+
+function save() {
+  lastEdit = Date.now();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    const diff = {};
+    for (const k in S) if (!same(S[k], server[k])) diff[k] = S[k];
+    if (!Object.keys(diff).length) return;
+    const r = await fetch('/api/settings', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(diff) });
+    if (r.ok) server = await r.json();
+    document.getElementById('saved').textContent = r.ok ? 'Saved.' : 'Could not save.';
+  }, 120);
+}
+
+function colourList() {
+  if (S.color_mode === 'palette') return S.palette.slice();
+  let a = S.hue_start, b = S.hue_end; if (b < a) b += 360;
+  const n = Math.max(1, S.range_steps), out = [];
+  for (let i = 0; i < n; i++) out.push(`hsl(${(a + (b - a) * (n > 1 ? i / (n - 1) : 0)) % 360} ${Math.round(S.saturation * 100)}% ${Math.round(100 - S.saturation * 50)}%)`);
+  return out;
+}
+
+function refresh() {
+  document.querySelectorAll('[data-only]').forEach(r => r.classList.toggle('hidden', r.dataset.only !== S.color_mode));
+  const cols = colourList(), w = 100 / cols.length;
+  const strip = document.getElementById('strip');
+  if (strip) strip.style.background = 'linear-gradient(90deg,' + cols.map((c, i) => `${c} ${i * w}% ${(i + 1) * w}%`).join(',') + ')';
+}
+
+function paletteEditor(row) {
+  const box = el('div', { className:'swatches' });
+  const draw = () => {
+    box.replaceChildren();
+    S.palette.forEach((c, i) => {
+      const inp = el('input', { type:'color', value:c });
+      inp.oninput = () => { S.palette[i] = inp.value; refresh(); save(); };
+      const rm = el('button', { textContent:'×', title:'Remove colour' });
+      rm.onclick = () => { if (S.palette.length > 1) { S.palette.splice(i, 1); draw(); refresh(); save(); } };
+      box.append(el('div', { className:'sw' }, inp, rm));
+    });
+    if (S.palette.length < 12) {
+      const add = el('button', { textContent:'+ Add colour' });
+      add.onclick = () => { S.palette.push('#ffffff'); draw(); refresh(); save(); };
+      box.append(add);
+    }
+  };
+  draw(); row.append(box);
+}
+
+function build() {
+  const root = document.getElementById('groups'); root.replaceChildren();
+  for (const g of GROUPS) {
+    const card = el('div', { className:'card' }, el('h2', { textContent:g.title }));
+    for (const it of g.items) {
+      const row = el('div', { className:'row' });
+      if (it.only) row.dataset.only = it.only;
+      if (it.type === 'link') { row.append(el('div', { className:'help', id:'linknote', textContent:'' })); card.append(row); continue; }
+      if (it.type === 'strip') { row.append(el('div', { className:'strip', id:'strip' })); card.append(row); continue; }
+      if (it.type === 'map') {
+        const map = el('div', { className:'map', id:'map' });
+        map.onclick = ev => {
+          const r = map.getBoundingClientRect();
+          S.origin_x = Math.round(((ev.clientX - r.left) / r.width * 2 - 1) * 100) / 100;
+          S.origin_y = Math.round((1 - (ev.clientY - r.top) / r.height * 2) * 100) / 100;
+          if (S.axis !== 'radial') { S.axis = 'radial'; build(); }
+          save();
+        };
+        row.append(el('label', {}, el('span', { textContent:'Room map (live)' })), map,
+          el('div', { className:'help', textContent:'Seen from above: front of the room at the top, as laid out in the Hue app. Tap the map to put the DJ booth there and radiate from it.' }));
+        card.append(row); continue;
+      }
+      const lab = el('label', {}, el('span', { textContent:it.label }));
+      row.append(lab);
+      if (it.type === 'select') {
+        const sel = el('select');
+        it.options.forEach(([v, t]) => sel.append(el('option', { value:v, textContent:t })));
+        sel.value = S[it.k];
+        sel.onchange = () => { S[it.k] = it.num ? Number(sel.value) : sel.value; refresh(); save(); };
+        lab.append(sel);
+      } else if (it.type === 'check') {
+        const cb = el('input', { type:'checkbox', checked: !!S[it.k] });
+        if (it.id) cb.id = it.id;
+        cb.onchange = () => { S[it.k] = cb.checked; save(); };
+        lab.append(cb);
+      } else if (it.type === 'palette') {
+        paletteEditor(row);
+      } else {
+        const out = el('output', { textContent: it.fmt(S[it.k]) });
+        const rng = el('input', { type:'range', min:it.min, max:it.max, step:it.step, value:S[it.k] });
+        rng.oninput = () => { S[it.k] = Number(rng.value); out.textContent = it.fmt(S[it.k]); refresh(); save(); };
+        lab.append(out); row.append(rng);
+      }
+      if (it.help) row.append(el('div', { className:'help', textContent:it.help }));
+      card.append(row);
+    }
+    root.append(card);
+  }
+  refresh();
+}
+
+// ------------------------------------------------------------------ presets
+let P = { names: [], active: '', modified: false };
+function drawPresets(p) {
+  const sel = document.getElementById('preset');
+  if (document.activeElement === sel) return;               // do not redraw a menu that is open
+  if (!same(p.names, P.names) || p.active !== P.active || !sel.options.length) {
+    sel.replaceChildren();
+    if (!p.active) sel.append(el('option', { value:'', textContent:'(unsaved look)' }));
+    p.names.forEach(n => sel.append(el('option', { value:n, textContent:n })));
+    sel.value = p.active;
+  }
+  P = p;
+  document.getElementById('pmod').textContent = p.active && p.modified ? 'edited, not saved' : '';
+  document.getElementById('psave').disabled = !p.active || !p.modified;
+  document.getElementById('prename').disabled = document.getElementById('pdelete').disabled = !p.active;
+}
+async function presetAct(action, name, to) {
+  const r = await fetch('/api/presets', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action, name, to }) });
+  if (!r.ok) { alert((await r.text()).trim()); return; }
+  const d = await r.json();
+  S = d.settings; server = copy(S); lastEdit = 0; build();
+  document.getElementById('preset').blur(); P = { names: [], active: null, modified: false }; drawPresets(d.presets);
+}
+function wirePresets() {
+  const sel = document.getElementById('preset');
+  sel.onchange = () => { if (sel.value) presetAct('apply', sel.value); };
+  document.getElementById('psave').onclick = () => presetAct('save', P.active);
+  document.getElementById('psaveas').onclick = () => {
+    const name = (prompt('Name for the current look:', '') || '').trim();
+    if (!name) return;
+    const clash = P.names.find(n => n.toLowerCase() === name.toLowerCase());
+    if (clash && !confirm(`Replace the preset “${clash}” with the current look?`)) return;
+    presetAct('save', name);
+  };
+  document.getElementById('prename').onclick = () => {
+    const to = (prompt('New name for “' + P.active + '”:', P.active) || '').trim();
+    if (to && to !== P.active) presetAct('rename', P.active, to);
+  };
+  document.getElementById('pdelete').onclick = () => {
+    if (confirm(`Delete the preset “${P.active}”? The lights keep their current look.`)) presetAct('delete', P.active);
+  };
+}
+
+async function poll() {
+  try {
+    const sent = performance.now();
+    const d = await (await fetch('/api/state')).json(), st = d.status;
+    vizSync(st, sent);
+    if (d.presets) drawPresets(d.presets);
+    if (!S) { S = d.settings; server = copy(S); build(); }
+    else if (Date.now() - lastEdit > 1500 && !same(d.settings, S)) {
+      // changed somewhere else (another page, or the program itself): show it
+      S = d.settings; server = copy(S); build();
+      document.getElementById('saved').textContent = 'Updated from another device.';
+    }
+    document.getElementById('bpm').textContent = st.locked ? st.bpm.toFixed(2) : '--';
+    document.querySelectorAll('.dot').forEach((dot, i) => { dot.className = 'dot' + (st.locked && st.beat_in_bar === i + 1 ? ' on' + (i === 0 ? ' one' : '') : ''); });
+    document.getElementById('following').textContent = st.locked ? 'Following deck ' + st.player : 'Waiting for a deck';
+    document.getElementById('alert').classList.toggle('hidden', !st.gear_lost);
+    const ln = document.getElementById('linknote');
+    if (ln) ln.textContent = 'Deck link: ' + st.link.note + (st.phrase.known ? ` \u00b7 now in \u201c${st.phrase.label}\u201d (energy ${Math.round(st.phrase.energy * 100)}%, ${st.phrase.phrases} phrases in this track)` : (st.link.active && st.phrase.track_beat ? ` \u00b7 beat ${st.phrase.track_beat} of the track, no phrase analysis yet` : ''));
+    const gear = document.getElementById('gear'); gear.replaceChildren();
+    if (!st.devices.length) gear.textContent = 'No DJ gear heard on the network yet.';
+    st.devices.forEach(dev => {
+      const deck = st.decks.find(x => x.player === dev.number);
+      let cls = 'pill', txt = dev.name + ' #' + dev.number;
+      if (deck && deck.playing) { txt += (deck.on_air ? ' · live' : ' · cue') + (deck.master ? ' · master' : ''); if (deck.on_air) cls += ' live'; }
+      gear.append(el('span', { className:cls, textContent:txt }));
+    });
+    const map = document.getElementById('map');
+    if (map && st.lights) {
+      if (map.childElementCount !== st.lights.length + 1) {
+        map.replaceChildren(el('div', { className:'booth' }));
+        st.lights.forEach(() => map.append(el('div', { className:'lamp' })));
+      }
+      const booth = map.firstChild;
+      booth.style.display = S.axis === 'radial' ? 'block' : 'none';
+      booth.style.left = (S.origin_x + 1) * 50 + '%'; booth.style.top = (1 - S.origin_y) * 50 + '%';
+      st.lights.forEach((l, i) => {
+        const d = map.children[i + 1];
+        // lights stacked at one spot (lamp segments) fan out by height
+        d.style.left = `calc(${6 + (l.x + 1) * 44}% + ${l.z * 9}px)`; d.style.top = `calc(${6 + (1 - l.y) * 44}% - ${l.z * 9}px)`;
+        d.style.background = l.color; d.style.boxShadow = '0 0 10px ' + l.color;
+      });
+    }
+    const worst = Math.max(0, ...st.decks.filter(x => x.playing && x.on_air && x.player === st.player).map(x => x.jitter_ms));
+    const lights = document.getElementById('lights'); lights.replaceChildren();
+    lights.append(el('span', { className:'pill' + (st.streaming ? ' live' : ' warn'), textContent: st.streaming ? `Lights: streaming to “${st.area}” (${st.channels} channels)` : 'Lights: not streaming' + (st.error ? ' (' + st.error + ')' : '') }));
+    if (worst > 30) lights.append(el('span', { className:'pill warn', textContent:`Network jitter ${worst} ms: a wired connection will tighten the sync` }));
+  } catch (e) {
+    document.getElementById('following').textContent = 'App not reachable';
+  }
+}
+
+document.getElementById('reset').onclick = async () => {
+  if (!confirm('Reset every setting to its default?')) return;
+  S = await (await fetch('/api/reset', { method:'POST' })).json(); server = copy(S); build();
+};
+vizWire(); wirePresets();
+poll(); setInterval(poll, 100);
+</script>
+</body>
+</html>

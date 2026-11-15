@@ -1,0 +1,21 @@
+[Unit]
+Description=cdjhue: sync Philips Hue lights to Pioneer CDJs
+Documentation=file:///opt/cdjhue/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=CDJHUE_USER
+# Decks that start without a router give themselves 169.254.x.x addresses,
+# which this machine only hears if it has an address in that range too.
+# The "+" runs this one step as root; the program itself runs as the user.
+ExecStartPre=+/opt/cdjhue/link-local.sh
+# -retry: wait for the network and the Hue bridge after a boot.
+# -wait:  if another copy is already driving the lights, stand by and take
+#         over when it stops, instead of taking the lights from it.
+ExecStart=/opt/cdjhue/app/cdjhue -open=false -retry -wait CDJHUE_BRIDGE-config CDJHUE_HOME/.config/cdjhue/cdjhue.json
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

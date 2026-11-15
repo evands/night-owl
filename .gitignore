@@ -1,0 +1,11 @@
+# built programs
+/cdjhue
+/cdjhue.exe
+/dist/
+
+# settings and logs (the settings file holds a Hue bridge key)
+cdjhue.json
+cdjhue.log
+*.before-presets.json
+
+.DS_Store
