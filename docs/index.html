@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Night Owl by Groove Formula</title>
+<meta name="description" content="Night Owl locks Philips Hue lights, and a full-screen visualizer, to the beat of Pioneer CDJs by reading the beat straight from the decks.">
+<meta property="og:title" content="Night Owl by Groove Formula">
+<meta property="og:description" content="Philips Hue lights and a full-screen visualizer, locked to the beat of Pioneer CDJs.">
+<meta property="og:image" content="https://evands.github.io/night-owl/visualizer-scenes.jpg">
+<meta name="theme-color" content="#07080c">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307080c'/%3E%3Ccircle cx='22' cy='30' r='11' fill='none' stroke='%237c5cff' stroke-width='5'/%3E%3Ccircle cx='42' cy='30' r='11' fill='none' stroke='%23ff5ca8' stroke-width='5'/%3E%3Ccircle cx='22' cy='30' r='3.5' fill='%23fff'/%3E%3Ccircle cx='42' cy='30' r='3.5' fill='%23fff'/%3E%3Cpath d='M28 44l4 6 4-6z' fill='%23ffd166'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#07080c; --panel:#10121a; --line:#232737; --text:#eef0f6; --dim:#9aa1b5;
+    --a1:#7c5cff; --a2:#ff5ca8; --a3:#4cc9f0;           /* follow the look chosen in the demo */
+    --display:"Unbounded", system-ui, sans-serif;
+  }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body { margin:0; background:var(--bg); color:var(--text); font:17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:inherit; }
+  .wrap { max-width:1120px; margin:0 auto; padding:0 24px; }
+  h1, h2, h3 { font-family:var(--display); line-height:1.08; letter-spacing:-.02em; margin:0; }
+  h2 { font-size:clamp(28px, 4.4vw, 46px); }
+  h3 { font-size:18px; letter-spacing:-.01em; line-height:1.25; }
+  p { margin:0; }
+  .lede { color:var(--dim); font-size:clamp(17px, 2vw, 20px); max-width:44em; }
+  .eyebrow { font-family:var(--display); font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:var(--a3); transition:color 1s; }
+
+  /* ---------- hero: the real visualizer, on a simulated beat ---------- */
+  .hero { position:relative; min-height:100svh; display:flex; flex-direction:column; overflow:hidden; isolation:isolate;
+    background:radial-gradient(120% 90% at 30% 20%, #241a5c 0%, #0b0d1c 55%, var(--bg) 100%); }
+  #vizc { position:absolute; inset:0; width:100%; height:100%; display:block; z-index:-2; }
+  .hero::after { content:""; position:absolute; inset:0; z-index:-1; pointer-events:none;   /* keeps the words readable over any scene */
+    background:linear-gradient(90deg, #07080cc4 0%, #07080c8a 38%, #07080c1f 72%, transparent 100%),
+               linear-gradient(180deg, #07080ccc 0%, #07080c2e 22%, #07080c1f 55%, #07080cf5 100%); }
+  nav { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:22px 0; }
+  .brand { font-family:var(--display); font-weight:700; font-size:19px; text-decoration:none; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .brand small { font:500 12.5px/1 system-ui, sans-serif; color:#ffffffb0; letter-spacing:.04em; }
+  nav ul { display:flex; gap:26px; list-style:none; margin:0; padding:0; font-size:15px; }
+  nav ul a { text-decoration:none; color:#ffffffd0; }
+  nav ul a:hover { color:#fff; }
+  .hero-main { flex:1; display:flex; flex-direction:column; justify-content:center; padding-block:30px 20px; }
+  h1 { font-size:clamp(40px, 8.4vw, 104px); font-weight:700; text-shadow:0 4px 40px #000a; max-width:11em; }
+  h1 em { font-style:normal; color:transparent; -webkit-background-clip:text; background-clip:text; text-shadow:none; filter:drop-shadow(0 3px 22px #000c);
+    background-image:linear-gradient(90deg, color-mix(in srgb, var(--a1) 45%, white), color-mix(in srgb, var(--a2) 45%, white)); }
+  .hero .lede { color:#ffffffe0; margin-top:22px; text-shadow:0 2px 18px #000c; }
+  .cta { display:flex; gap:12px; flex-wrap:wrap; margin-top:30px; }
+  .btn { display:inline-block; padding:13px 22px; border-radius:999px; text-decoration:none; font-weight:600; font-size:16px; border:1px solid #ffffff40; background:#0008; backdrop-filter:blur(8px); }
+  .btn.primary { border:0; color:#0a0b10; background:linear-gradient(90deg, var(--a1), var(--a2)); }
+  .btn:hover { filter:brightness(1.12); }
+
+  .deck { padding-bottom:26px; }
+  .deck-top { display:flex; align-items:flex-end; justify-content:space-between; gap:18px; flex-wrap:wrap; margin-bottom:14px; }
+  .bpm { font-family:var(--display); font-size:clamp(30px, 5vw, 54px); font-weight:700; line-height:.9; font-variant-numeric:tabular-nums; }
+  .bpm small { font:500 12px/1 system-ui, sans-serif; letter-spacing:.14em; opacity:.75; margin-left:8px; }
+  .vdots { display:inline-flex; gap:8px; margin-left:16px; vertical-align:middle; }
+  .vdots i { width:11px; height:11px; border-radius:50%; background:#fff3; transition:background .12s, transform .12s; }
+  .vdots i.on { background:#fff; transform:scale(1.5); box-shadow:0 0 16px #fff; }
+  .scene { display:flex; align-items:center; gap:10px; font-family:var(--display); font-size:12px; letter-spacing:.2em; text-transform:uppercase; }
+  .scene button, .chip { cursor:pointer; font:inherit; color:#fff; background:#0009; border:1px solid #ffffff38; border-radius:999px; backdrop-filter:blur(8px); }
+  .scene button { width:36px; height:36px; font-size:18px; line-height:1; }
+  #vscene { min-width:9.5em; text-align:center; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; }
+  .chip { padding:8px 14px 8px 10px; font-size:14px; display:inline-flex; align-items:center; gap:8px; }
+  .chip i { width:34px; height:12px; border-radius:6px; }
+  .chip[aria-pressed=true] { background:#fff; color:#0a0b10; border-color:#fff; }
+  .note { color:#ffffffa8; font-size:13px; margin-top:12px; }
+  #play { display:none; }
+
+  /* ---------- sections ---------- */
+  section { padding:96px 0; border-top:1px solid var(--line); }
+  .split { display:grid; grid-template-columns:1.05fr 1fr; gap:56px; align-items:center; }
+  .stats { display:grid; grid-template-columns:repeat(2, 1fr); gap:14px; }
+  .stat { background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:22px; }
+  .stat b { display:block; font-family:var(--display); font-size:clamp(26px, 3.4vw, 40px); line-height:1; color:var(--a3); transition:color 1s; }
+  .stat span { color:var(--dim); font-size:14.5px; display:block; margin-top:8px; }
+
+  .versus { display:grid; gap:12px; margin-top:28px; }
+  .lane { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px 18px; }
+  .lane header { display:flex; justify-content:space-between; font-size:14px; color:var(--dim); margin-bottom:10px; }
+  .track { position:relative; height:34px; border-radius:8px; background:repeating-linear-gradient(90deg, #ffffff14 0 2px, transparent 2px 25%); }
+  .hit, .glow { position:absolute; top:5px; height:24px; border-radius:6px; }
+  .hit { width:5px; background:#fff; }
+  .glow { width:13%; background:linear-gradient(90deg, var(--a2), transparent); opacity:.95; transition:background 1s; }
+
+  .grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin-top:44px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:26px; }
+  .card .ico { width:42px; height:42px; border-radius:12px; display:grid; place-items:center; margin-bottom:16px; background:linear-gradient(135deg, var(--a1), var(--a2)); transition:all 1s; }
+  .card .ico svg { width:22px; height:22px; stroke:#0a0b10; fill:none; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
+  .card p { color:var(--dim); font-size:15.5px; margin-top:8px; }
+
+  /* the row of lights */
+  .room { background:var(--panel); border:1px solid var(--line); border-radius:24px; padding:28px; margin-top:40px; }
+  .lamps { display:flex; justify-content:space-between; gap:6px; padding:34px 6px 30px; }
+  .lamps i { flex:1; max-width:46px; aspect-ratio:1; border-radius:50%; background:#1a1d2a; }
+  .fx { display:flex; gap:8px; flex-wrap:wrap; }
+  .fx .chip { background:#0000; border-color:var(--line); color:var(--text); padding:8px 16px; }
+  .fx .chip[aria-pressed=true] { background:var(--text); color:var(--bg); }
+
+  .flow { margin-top:44px; display:grid; grid-template-columns:1fr auto 1fr auto 1fr; gap:14px; align-items:stretch; }
+  .node { background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:24px; }
+  .node h3 { margin-bottom:8px; }
+  .node p { color:var(--dim); font-size:15px; }
+  .arrow { display:grid; place-items:center; color:var(--a3); font-size:13px; text-align:center; min-width:70px; transition:color 1s; }
+  .arrow svg { width:54px; height:20px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; display:block; margin:0 auto 4px; }
+
+  .needs { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin-top:40px; }
+  .needs ul { margin:12px 0 0; padding-left:18px; color:var(--dim); font-size:15.5px; }
+  .needs li { margin:6px 0; }
+
+  .steps { counter-reset:s; display:grid; gap:14px; margin-top:40px; }
+  .step > * { min-width:0; }
+  .step { display:grid; grid-template-columns:54px minmax(0, 1fr); gap:18px; background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:24px; }
+  .step::before { counter-increment:s; content:counter(s); font-family:var(--display); font-size:22px; width:54px; height:54px; border-radius:16px; display:grid; place-items:center; color:#0a0b10; background:linear-gradient(135deg, var(--a1), var(--a2)); transition:all 1s; }
+  .step p { color:var(--dim); margin-top:6px; font-size:16px; }
+  pre { margin:14px 0 0; padding:16px 18px; background:#06070b; border:1px solid var(--line); border-radius:12px; overflow-x:auto; font:14px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color:#d7dcf0; }
+  code { font:.92em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background:#ffffff12; padding:.1em .38em; border-radius:6px; }
+  pre code { background:none; padding:0; }
+
+  .shots { margin-top:40px; border-radius:22px; overflow:hidden; border:1px solid var(--line); }
+  .shots img { display:block; width:100%; height:auto; }
+
+  .final { text-align:center; }
+  .final .cta { justify-content:center; }
+  footer { border-top:1px solid var(--line); padding:34px 0 60px; color:var(--dim); font-size:14px; }
+  footer .wrap { display:flex; justify-content:space-between; gap:20px; flex-wrap:wrap; }
+  footer p { max-width:46em; }
+
+  @media (max-width: 900px) {
+    nav ul { display:none; }
+    section { padding:70px 0; }
+    .split, .grid, .needs { grid-template-columns:1fr; gap:16px; }
+    .split { gap:34px; }
+    .flow { grid-template-columns:1fr; }
+    .arrow { transform:rotate(90deg); min-height:54px; }
+    .arrow span { display:none; }
+    .lamps i:nth-child(n+11) { display:none; }
+  }
+  @media (max-width: 520px) {
+    .step { grid-template-columns:minmax(0, 1fr); }
+    .stats { grid-template-columns:1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior:auto; }
+    #play { display:inline-block; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero" id="top">
+  <canvas id="vizc" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <nav>
+      <a class="brand" href="#top">Night Owl <small>by Groove Formula</small></a>
+      <ul>
+        <li><a href="#why">Why it's tight</a></li>
+        <li><a href="#features">Features</a></li>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#start">Get started</a></li>
+        <li><a href="https://github.com/evands/night-owl">GitHub</a></li>
+      </ul>
+    </nav>
+  </div>
+  <div class="wrap hero-main">
+    <h1>Your lights, <em>on the beat.</em></h1>
+    <p class="lede">Night Owl reads the beat straight from your Pioneer CDJs and plays a room of Philips Hue lights, and a full-screen visualizer, in time with the music.</p>
+    <div class="cta">
+      <a class="btn primary" href="#start">Get started</a>
+      <a class="btn" href="https://github.com/evands/night-owl">View on GitHub</a>
+      <button class="btn" id="play" type="button">Play the demo</button>
+    </div>
+  </div>
+  <div class="wrap deck">
+    <div class="deck-top">
+      <div><span class="bpm"><span id="vbpm">124.0</span><small>BPM · DEMO</small></span><span class="vdots"><i></i><i></i><i></i><i></i></span></div>
+      <div class="scene"><button id="prev" type="button" aria-label="Previous scene">‹</button><span id="vscene">Silk</span><button id="next" type="button" aria-label="Next scene">›</button></div>
+    </div>
+    <div class="chips" id="looks" role="group" aria-label="Choose a look"></div>
+    <p class="note">This is the app's own visualizer running in your browser on a simulated beat. Pick a look; the whole page follows it.</p>
+    <span id="vphr" hidden></span>
+  </div>
+</header>
+
+<main>
+<section id="why">
+  <div class="wrap split">
+    <div>
+      <p class="eyebrow">Why it's tight</p>
+      <h2 style="margin-top:14px">It knows the beat before you hear it.</h2>
+      <p class="lede" style="margin-top:20px">Apps that listen through a microphone hear the kick, work out that it was a kick, and then tell the lights. They are always late. Your decks already broadcast every beat over their link network, with the tempo and the place in the bar. Night Owl listens to that, knows exactly when the next beat lands, and cues the lights a touch early so the light arrives with the sound.</p>
+      <div class="versus" aria-hidden="true">
+        <div class="lane"><header><span>Microphone app</span><span>light follows the kick</span></header>
+          <div class="track"><span class="hit" style="left:0"></span><span class="glow" style="left:5.5%"></span><span class="hit" style="left:25%"></span><span class="glow" style="left:30.5%"></span><span class="hit" style="left:50%"></span><span class="glow" style="left:55.5%"></span><span class="hit" style="left:75%"></span><span class="glow" style="left:80.5%"></span></div></div>
+        <div class="lane"><header><span>Night Owl</span><span>light lands on the kick</span></header>
+          <div class="track"><span class="glow" style="left:0"></span><span class="hit" style="left:0"></span><span class="glow" style="left:25%"></span><span class="hit" style="left:25%"></span><span class="glow" style="left:50%"></span><span class="hit" style="left:50%"></span><span class="glow" style="left:75%"></span><span class="hit" style="left:75%"></span></div></div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>~25 ms</b><span>from the beat to the lights at half brightness, measured from slow-motion video on a wired computer</span></div>
+      <div class="stat"><b>3 ms</b><span>timing wobble on a network cable, against about 200 ms over Wi-Fi</span></div>
+      <div class="stat"><b>12</b><span>visualizer scenes, blending into each other on the bar line</span></div>
+      <div class="stat"><b>7</b><span>light effects that travel across your room's real layout</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <p class="eyebrow">What it does</p>
+    <h2 style="margin-top:14px">A light show that plays along.</h2>
+    <div class="room">
+      <div class="fx" id="fx" role="group" aria-label="Choose an effect"></div>
+      <div class="lamps" id="lamps" aria-hidden="true"></div>
+      <p class="note" style="color:var(--dim); margin:0">A row of lights on the same simulated beat. In your room, the order comes from where each light really is.</p>
+    </div>
+    <div class="grid">
+      <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg></div><h3>Beat-locked lights</h3><p>Every beat, with the downbeat hitting harder. It keeps time through lost packets, tempo changes and jog nudges.</p></div>
+      <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M3 9l9-6 9 6v11H3z"/><path d="M9 20v-6h6v6"/></svg></div><h3>Effects that know your room</h3><p>Waves, chases and sweeps run across your lights' real positions, taken from your Hue Entertainment area. Left to right, back to front, or outward from the DJ booth.</p></div>
+      <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M4 20V10M9 20V6M14 20v-9M19 20V3"/></svg></div><h3>Build-ups and hits</h3><p>The last bar before a change rolls twice, then four times as fast, brightening toward white. The next downbeat lands as a hit across the whole room.</p></div>
+      <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="7" r="3"/><circle cx="12" cy="16" r="3"/></svg></div><h3>Presets</h3><p>Switch the whole look from one menu. Eight harmonious looks to start, and save, rename and delete your own.</p></div>
+      <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div><h3>A visualizer for the big screen</h3><p>Twelve full-screen scenes in the lights' colours, moving on the same beat. Open it on a TV or projector from any browser on your network.</p></div>
+      <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg></div><h3>Track awareness, if you want it</h3><p>Optionally joins the DJ network to follow the leading deck through a blend and to land changes on a track's phrases: intro, verse, chorus.</p></div>
+      <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="3"/><path d="M12 18h.01"/></svg></div><h3>Run it from your phone</h3><p>A control page for any phone or computer on the network, with a live map of the room. Every change applies at once.</p></div>
+      <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><circle cx="12" cy="12" r="2.5"/></svg></div><h3>More than ten lights</h3><p>A Hue area holds ten. Add more areas and Night Owl treats them as one room: one streamed on every beat, the rest taking the colours and their turn to flash.</p></div>
+      <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg></div><h3>Leave it running</h3><p>One small program for Windows, macOS and Linux. Install it as a service on an always-on machine and it is there whenever the decks are.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <p class="eyebrow">How it works</p>
+    <h2 style="margin-top:14px">It listens. It counts. It leads.</h2>
+    <div class="flow">
+      <div class="node"><h3>Your decks</h3><p>Pioneer players broadcast a packet on every beat over PRO DJ LINK, with the tempo and the position in the bar. The mixer says which channels are live. Night Owl only listens.</p></div>
+      <div class="arrow"><div><svg viewBox="0 0 54 20"><path d="M2 10h48M42 3l8 7-8 7"/></svg><span>every beat</span></div></div>
+      <div class="node"><h3>Night Owl</h3><p>Keeps a steady beat clock that shrugs off late and lost packets, picks the deck that is live, and works out each light's colour 50 times a second, shifted early by your light lead.</p></div>
+      <div class="arrow"><div><svg viewBox="0 0 54 20"><path d="M2 10h48M42 3l8 7-8 7"/></svg><span>50 frames a second</span></div></div>
+      <div class="node"><h3>Your lights</h3><p>Colours stream to the Hue bridge over its low-latency Entertainment connection, and to any browser showing the visualizer.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="needs">
+  <div class="wrap">
+    <p class="eyebrow">What you need</p>
+    <h2 style="margin-top:14px">Decks, lights, and something to run it on.</h2>
+    <div class="needs">
+      <div class="card"><h3>DJ gear</h3><ul><li>Pioneer DJ players with a LINK port. Built and tested with CDJ-2000NXS2s and a DJM-900NXS2.</li><li>A network switch and a cable from each player.</li><li>Tracks analysed in rekordbox.</li></ul></div>
+      <div class="card"><h3>Lights</h3><ul><li>A Philips Hue Bridge and colour-capable Hue lights.</li><li>A Hue Entertainment area with each light dragged to where it really is. That is how Night Owl learns your room.</li></ul></div>
+      <div class="card"><h3>A computer</h3><ul><li>Windows, macOS or Linux, on the same network.</li><li>On a network cable if you can: it is the difference between 3 ms and 200 ms of wobble.</li><li>Go, to build it.</li></ul></div>
+    </div>
+  </div>
+</section>
+
+<section id="start">
+  <div class="wrap">
+    <p class="eyebrow">Get started</p>
+    <h2 style="margin-top:14px">Four steps to the first beat.</h2>
+    <div class="steps">
+      <div class="step"><div><h3>Wire the decks to your network</h3><p>Each player's LINK port to a switch, and the switch to your router. Turn the decks on after the cable is in.</p></div></div>
+      <div class="step"><div><h3>Lay out your room in the Hue app</h3><p>Create an Entertainment area of the music type, add your lights, and drag each one to its real position and height. The effects, the colour spread and the room map all work from this.</p></div></div>
+      <div class="step"><div><h3>Build it</h3><p>The program is a single file called <code>cdjhue</code>.</p>
+<pre><code>git clone https://github.com/evands/night-owl
+cd night-owl
+go build -o cdjhue .</code></pre></div></div>
+      <div class="step"><div><h3>Run it and press the bridge button</h3><p>The first run asks you to press the button on your Hue bridge. After that it starts straight away, takes the lights, and opens the control page. Pick a look and tune the light lead until the lights sit on the kick.</p>
+<pre><code>./cdjhue</code></pre></div></div>
+    </div>
+    <p class="lede" style="margin-top:28px">The <a href="https://github.com/evands/night-owl#readme">README</a> has the full guide: each operating system, the always-on server, more than ten lights, and what to check when something is off.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <p class="eyebrow">The visualizer</p>
+    <h2 style="margin-top:14px">Twelve scenes, one beat.</h2>
+    <p class="lede" style="margin-top:20px">Silk, Tunnel, Kaleidoscope, Aurora, Horizon, Bokeh, Warp, Glass, Liquid, Prism, Ribbons and Hive. Each takes the lights' colours, and no two appearances are quite the same.</p>
+    <div class="shots"><img src="visualizer-scenes.jpg" width="1320" height="990" loading="lazy" alt="Nine of the visualizer's scenes in a grid: flowing silk, a kaleidoscope, an aurora, a glowing grid with a low sun, streaking stars, stained glass, liquid light, soft bokeh circles and a tunnel."></div>
+  </div>
+</section>
+
+<section class="final">
+  <div class="wrap">
+    <h2>Put the room on the beat.</h2>
+    <div class="cta" style="margin-top:30px">
+      <a class="btn primary" href="https://github.com/evands/night-owl">Get Night Owl on GitHub</a>
+      <a class="btn" href="https://github.com/evands/night-owl#readme">Read the guide</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><strong style="color:var(--text)">Night Owl</strong> by Groove Formula.</p>
+    <p>Not affiliated with or endorsed by AlphaTheta / Pioneer DJ or Signify / Philips Hue. The PRO DJ LINK details come from Deep Symmetry's <a href="https://djl-analysis.deepsymmetry.org/">DJ Link Ecosystem Analysis</a>.</p>
+  </div>
+</footer>
+
+<script src="viz.js"></script>
+<script>
+// The hero runs the app's own visualizer (viz.js, unchanged) on a made-up
+// beat: this page plays the part of the program and feeds it positions.
+const S = { viz_bars: 8 };                        // viz.js reads the scene pacing from here
+const LOOKS = [
+  { name: 'Classic',          c: ['#00aaff', '#003aff', '#3b06ff', '#a500ff', '#ee00d9'] },
+  { name: 'Blue-Green Chase', c: ['#0060ff', '#00a0ff', '#00e0ff', '#00fa1d', '#0a8f2a'] },
+  { name: 'Sunset Wave',      c: ['#ff2e63', '#ff5a1f', '#ff7a10', '#ff9a00', '#ffd23f'] },
+  { name: 'Neon Nights',      c: ['#00e5ff', '#3e88ff', '#7b2cff', '#bd2ceb', '#ff2bd6'] },
+  { name: 'Deep Ocean',       c: ['#00ffd5', '#00d5ff', '#00a2ff', '#006aff', '#0033ff'] },
+  { name: 'Ember Glow',       c: ['#ff0030', '#ff0000', '#ff3300', '#ff6a00', '#ff9500'] },
+  { name: 'Aurora Sparkle',   c: ['#2bff00', '#00ff95', '#00d0ff', '#3b5bff', '#b400ff'] },
+  { name: 'Candy Shop',       c: ['#ff4fa3', '#ffd166', '#06d6a0', '#4cc9f0', '#b388ff'] },
+];
+const DEMO = { bpm: 124, t0: performance.now(), look: 0, fx: 'chase', running: false };
+const period = () => 60000 / DEMO.bpm;
+const beatPos = now => (now - DEMO.t0) / period();
+const nextMultiple = (pos, n) => (Math.floor((pos + 0.5) / n) + 1) * n;
+
+function setLook(i) {
+  DEMO.look = i;
+  const c = LOOKS[i].c, root = document.documentElement.style;
+  root.setProperty('--a1', c[0]); root.setProperty('--a2', c[3]); root.setProperty('--a3', c[2]);
+  document.querySelectorAll('#looks .chip').forEach((b, k) => b.setAttribute('aria-pressed', k === i));
+}
+
+function feed() {                                 // what the program would report, ten times a second
+  const now = performance.now(), pos = beatPos(now);
+  vizSync({ locked: true, bpm: DEMO.bpm, player: 1, phrase: { known: false },
+    viz: { pos, period_ms: period(), drop: false, offbeat: 0.7, colors: LOOKS[DEMO.look].c,
+           fill_at: nextMultiple(pos, 32), block_at: nextMultiple(pos, 32) } }, now);
+  document.getElementById('vbpm').textContent = DEMO.bpm.toFixed(1);
+}
+
+function wake() {                                  // (re)start the drawing loop, never two at once
+  cancelAnimationFrame(VZ.raf);
+  VZ.on = true; VZ.last = 0;
+  VZ.raf = requestAnimationFrame(vizFrame);
+}
+function start() {
+  if (DEMO.running) return;
+  try { if (!VZ.gl && !vizInit()) return; } catch (e) { console.error(e); return; }   // no WebGL: the gradient stays
+  DEMO.running = true; VZ.lastBar = null; VZ.lastChange = performance.now();
+  feed(); wake();
+}
+function stop() { DEMO.running = false; VZ.on = false; }
+
+// ---- the row of lights: the same effects, the same clock
+const LAMPS = 14, narrow = matchMedia('(max-width: 900px)');   // a narrow screen shows the first ten
+const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+function lampColour(x) {                           // the look's colours spread across the row
+  const c = LOOKS[DEMO.look].c, t = x * (c.length - 1), i = Math.min(c.length - 2, Math.floor(t)), f = t - i;
+  const a = hex(c[i]), b = hex(c[i + 1]);
+  return a.map((v, k) => Math.round(v + (b[k] - v) * f));
+}
+function scatter(i, beat) { let h = Math.imul(i + 1, 0x9E3779B1) ^ Math.imul(beat + 1, 0x85EBCA77); h ^= h >>> 15; h = Math.imul(h, 0x2C1B3C6D); h ^= h >>> 12; return (h >>> 0) % 100; }
+function lamps(now) {
+  requestAnimationFrame(lamps);
+  if (!DEMO.running) return;
+  const pos = beatPos(now), beat = Math.floor(pos), frac = pos - beat, down = beat % 4 === 0;
+  const shown = narrow.matches ? 10 : LAMPS;
+  document.querySelectorAll('#lamps i').forEach((el, i) => {
+    if (i >= shown) return;
+    const x = i / (shown - 1); let f = frac, b = beat, on = true;
+    if (DEMO.fx === 'wave') { f -= x * 0.6; if (f < 0) { f += 1; b -= 1; } }
+    if (DEMO.fx === 'alternate') on = (i + b) % 2 === 0;
+    if (DEMO.fx === 'chase') on = Math.min(3, Math.floor(x * 4)) === ((b % 4) + 4) % 4;
+    if (DEMO.fx === 'bounce') on = Math.min(3, Math.floor(x * 4)) === [0, 1, 2, 3, 2, 1][((b % 6) + 6) % 6];
+    if (DEMO.fx === 'sparkle') on = scatter(i, b) < 40;
+    const env = Math.pow(Math.max(0, 1 - f / 0.9), 1.5) * (down || DEMO.fx === 'wave' ? 1 : 0.75) * (on ? 1 : 0.12);
+    const v = 0.16 + 0.84 * env, c = lampColour(x).map(n => Math.round(n * v));
+    el.style.background = `rgb(${c})`;
+    el.style.boxShadow = `0 0 ${Math.round(34 * env)}px rgb(${c})`;
+  });
+}
+
+// ---- wiring
+const looks = document.getElementById('looks');
+LOOKS.forEach((l, i) => {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'chip';
+  b.innerHTML = `<i style="background:linear-gradient(90deg, ${l.c.join(',')})"></i>`; b.append(l.name);
+  b.onclick = () => { setLook(i); feed(); };
+  looks.append(b);
+});
+const fx = document.getElementById('fx');
+['pulse', 'wave', 'alternate', 'chase', 'bounce', 'sparkle'].forEach(name => {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = name[0].toUpperCase() + name.slice(1);
+  b.setAttribute('aria-pressed', name === DEMO.fx);
+  b.onclick = () => { DEMO.fx = name; fx.querySelectorAll('.chip').forEach(o => o.setAttribute('aria-pressed', o === b)); };
+  fx.append(b);
+});
+const row = document.getElementById('lamps'); for (let i = 0; i < LAMPS; i++) row.append(document.createElement('i'));
+document.getElementById('prev').onclick = () => DEMO.running && vizStep(-1);
+document.getElementById('next').onclick = () => DEMO.running && vizStep(1);
+document.getElementById('vscene').classList.add('show');
+setLook(1);
+setInterval(() => DEMO.running && feed(), 100);
+requestAnimationFrame(lamps);
+
+const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const play = document.getElementById('play');
+play.onclick = () => { DEMO.running ? stop() : start(); play.textContent = DEMO.running ? 'Pause the demo' : 'Play the demo'; };
+if (!calm) {
+  start();
+  // rest while the hero is off screen or the tab is hidden
+  let inView = true;
+  const settle = () => { if (DEMO.running && inView && !document.hidden) { if (!VZ.on) wake(); } else VZ.on = false; };
+  new IntersectionObserver(es => { inView = es[0].isIntersecting; settle(); }, { threshold: 0.05 }).observe(document.querySelector('.hero'));
+  document.addEventListener('visibilitychange', settle);
+}
+</script>
+</body>
+</html>

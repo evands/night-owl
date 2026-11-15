@@ -2,6 +2,8 @@
 
 *by Groove Formula*
 
+**[evands.github.io/night-owl](https://evands.github.io/night-owl/)** has a tour and a live demo of the visualizer.
+
 Philips Hue lights, and a full-screen visualizer, locked to the beat of
 Pioneer CDJs.
 
@@ -374,6 +376,10 @@ go vet ./...
 The code is plain Go with two direct dependencies: `pion/dtls` for the
 bridge's encrypted stream and `golang.org/x/sys`. `index.html` and
 `viz.js` are embedded in the program.
+
+The website lives in `docs/` and is served by GitHub Pages. Its demo runs
+a copy of the visualizer, so after changing `viz.js` run
+`cp viz.js docs/viz.js`.
 
 ## Acknowledgements
 
