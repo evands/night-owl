@@ -9,7 +9,8 @@ import (
 // A preset is a saved look: colours, effect, brightness, pulse shape and so
 // on. It deliberately leaves out what belongs to the machine and the room
 // rather than the look: the light lead (a latency calibration), how decks
-// are chosen, and whether to join the DJ network.
+// are chosen, whether to join the DJ network, and how follower lights are
+// paced.
 type Preset struct {
 	Name string   `json:"name"`
 	Look Settings `json:"look"`
@@ -17,13 +18,14 @@ type Preset struct {
 
 // lookOf blanks the machine-specific fields, leaving only the look.
 func lookOf(s Settings) Settings {
-	s.LeadMs, s.StopBeats, s.FollowOnAir, s.DeckLink = 0, 0, false, false
+	s.LeadMs, s.StopBeats, s.FollowOnAir, s.DeckLink, s.FollowerPairs = 0, 0, false, false, false
 	return s
 }
 
 // withLook returns cur with the look replaced and its machine fields kept.
 func withLook(cur, look Settings) Settings {
 	look.LeadMs, look.StopBeats, look.FollowOnAir, look.DeckLink = cur.LeadMs, cur.StopBeats, cur.FollowOnAir, cur.DeckLink
+	look.FollowerPairs = cur.FollowerPairs
 	look.Palette = append([]string(nil), look.Palette...)
 	look.sanitize()
 	return look

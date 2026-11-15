@@ -62,7 +62,7 @@ func (d *DJLink) Start() error {
 		return fmt.Errorf("cannot listen for beats on UDP port 50001 (%v).\n"+
 			"Another program on this computer is probably holding the port: rekordbox does, "+
 			"and so can its helper PSvLinkSysMgr.exe after rekordbox is closed.\n"+
-			"Close rekordbox (and end PSvLinkSysMgr.exe if it lingers), then start cdjhue again", err)
+			"Close rekordbox (and end PSvLinkSysMgr.exe if it lingers), then start Night Owl again", err)
 	}
 	go d.readLoop(beatConn, d.handleBeatPort)
 	// Port 50000 only adds device names a little sooner; beats do not need it.

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"strings"
@@ -106,7 +107,7 @@ func bridgeID(ip string) string {
 // the bridge's link button being pressed.
 func pairBridge(ip string) (user, key string, err error) {
 	h := &Hue{ip: ip, client: newHTTPClient()}
-	_, data, err := h.do("POST", "/api", map[string]any{"devicetype": "cdjhue#app", "generateclientkey": true})
+	_, data, err := h.do("POST", "/api", map[string]any{"devicetype": "night_owl#groove formula", "generateclientkey": true})
 	if err != nil {
 		return "", "", err
 	}
@@ -166,6 +167,13 @@ type Area struct {
 	Status   string
 	Streamer string // application id of whoever is streaming, if anyone
 	Channels []Channel
+	Lights   []AreaLight // each light once, at the middle of its channels
+}
+
+// AreaLight is one light in an area, placed in the room.
+type AreaLight struct {
+	ID, Name string
+	X, Y, Z  float64
 }
 
 type areaJSON struct {
@@ -185,13 +193,22 @@ type areaJSON struct {
 			Y float64 `json:"y"`
 			Z float64 `json:"z"`
 		} `json:"position"`
+		Members []struct {
+			Service struct {
+				RID string `json:"rid"`
+			} `json:"service"`
+		} `json:"members"`
 	} `json:"channels"`
 }
 
 func (a areaJSON) area() Area {
 	out := Area{ID: a.ID, Name: a.Metadata.Name, Type: a.Type, Status: a.Status, Streamer: a.Streamer.RID}
 	for _, c := range a.Channels {
-		out.Channels = append(out.Channels, Channel{ID: c.ID, X: c.Position.X, Y: c.Position.Y, Z: c.Position.Z})
+		ch := Channel{ID: c.ID, X: c.Position.X, Y: c.Position.Y, Z: c.Position.Z}
+		if len(c.Members) > 0 {
+			ch.LightID = c.Members[0].Service.RID // an entertainment service id until Areas() resolves it
+		}
+		out.Channels = append(out.Channels, ch)
 	}
 	return out
 }
@@ -214,8 +231,168 @@ func (h *Hue) areas(path string) ([]Area, error) {
 	return out, nil
 }
 
+// Areas lists the Entertainment areas with each channel tied to its light.
 func (h *Hue) Areas() ([]Area, error) {
-	return h.areas("/clip/v2/resource/entertainment_configuration")
+	areas, err := h.areas("/clip/v2/resource/entertainment_configuration")
+	if err != nil {
+		return nil, err
+	}
+	// A channel names an "entertainment service"; that service and the
+	// light itself both belong to the same device.
+	type owned struct {
+		ID    string `json:"id"`
+		Owner struct {
+			RID string `json:"rid"`
+		} `json:"owner"`
+		Metadata struct {
+			Name string `json:"name"`
+		} `json:"metadata"`
+	}
+	list := func(path string) []owned {
+		var res struct {
+			Data []owned `json:"data"`
+		}
+		if _, data, err := h.do("GET", path, nil); err == nil {
+			_ = json.Unmarshal(data, &res)
+		}
+		return res.Data
+	}
+	lightOfDevice := map[string]owned{}
+	for _, l := range list("/clip/v2/resource/light") {
+		lightOfDevice[l.Owner.RID] = l
+	}
+	lightOfService := map[string]owned{}
+	for _, e := range list("/clip/v2/resource/entertainment") {
+		if l, ok := lightOfDevice[e.Owner.RID]; ok {
+			lightOfService[e.ID] = l
+		}
+	}
+	for i := range areas {
+		a := &areas[i]
+		sum := map[string]*AreaLight{}
+		count := map[string]float64{}
+		for j := range a.Channels {
+			c := &a.Channels[j]
+			l, ok := lightOfService[c.LightID]
+			if !ok {
+				c.LightID = ""
+				continue
+			}
+			c.LightID, c.Name = l.ID, l.Metadata.Name
+			if sum[l.ID] == nil {
+				sum[l.ID] = &AreaLight{ID: l.ID, Name: l.Metadata.Name}
+				a.Lights = append(a.Lights, AreaLight{ID: l.ID})
+			}
+			sum[l.ID].X, sum[l.ID].Y, sum[l.ID].Z = sum[l.ID].X+c.X, sum[l.ID].Y+c.Y, sum[l.ID].Z+c.Z
+			count[l.ID]++
+		}
+		for j := range a.Lights {
+			s, n := sum[a.Lights[j].ID], count[a.Lights[j].ID]
+			a.Lights[j] = AreaLight{ID: s.ID, Name: s.Name, X: s.X / n, Y: s.Y / n, Z: s.Z / n}
+		}
+	}
+	return areas, nil
+}
+
+// xy converts a colour to the CIE xy chromaticity ordinary light commands use.
+func xy(c RGB) (float64, float64) {
+	lin := func(v float64) float64 {
+		if v <= 0.04045 {
+			return v / 12.92
+		}
+		return math.Pow((v+0.055)/1.055, 2.4)
+	}
+	r, g, b := lin(c.R), lin(c.G), lin(c.B)
+	X := r*0.4124 + g*0.3576 + b*0.1805
+	Y := r*0.2126 + g*0.7152 + b*0.0722
+	Z := r*0.0193 + g*0.1192 + b*0.9505
+	if s := X + Y + Z; s > 0 {
+		return X / s, Y / s
+	}
+	return 0.3127, 0.3290 // white
+}
+
+// SetLight sends one ordinary command to a light: a colour, a brightness
+// (0..1) and how long to take getting there. This is the slow path; the
+// bridge accepts about ten of these a second in total.
+func (h *Hue) SetLight(id string, c RGB, bri float64, fade time.Duration) error {
+	m := math.Max(c.R, math.Max(c.G, c.B))
+	if m > 0 {
+		c = c.scale(1 / m)
+	}
+	x, y := xy(c)
+	_, _, err := h.do("PUT", "/clip/v2/resource/light/"+id, map[string]any{
+		"on":       map[string]bool{"on": true},
+		"dimming":  map[string]float64{"brightness": clampF(bri*100, 1, 100)},
+		"color":    map[string]any{"xy": map[string]float64{"x": x, "y": y}},
+		"dynamics": map[string]int64{"duration": fade.Milliseconds()},
+	})
+	return err
+}
+
+// LightState is what a light was doing before the show borrowed it.
+type LightState struct {
+	On        bool
+	Bri       float64
+	X         float64
+	Y         float64
+	HasColour bool
+}
+
+// LightStates reads the current state of the given lights.
+func (h *Hue) LightStates(ids []string) map[string]LightState {
+	out := map[string]LightState{}
+	_, data, err := h.do("GET", "/clip/v2/resource/light", nil)
+	if err != nil {
+		return out
+	}
+	var res struct {
+		Data []struct {
+			ID string `json:"id"`
+			On struct {
+				On bool `json:"on"`
+			} `json:"on"`
+			Dimming struct {
+				Brightness float64 `json:"brightness"`
+			} `json:"dimming"`
+			Color *struct {
+				XY struct {
+					X float64 `json:"x"`
+					Y float64 `json:"y"`
+				} `json:"xy"`
+			} `json:"color"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(data, &res) != nil {
+		return out
+	}
+	want := map[string]bool{}
+	for _, id := range ids {
+		want[id] = true
+	}
+	for _, l := range res.Data {
+		if !want[l.ID] {
+			continue
+		}
+		st := LightState{On: l.On.On, Bri: l.Dimming.Brightness}
+		if l.Color != nil {
+			st.X, st.Y, st.HasColour = l.Color.XY.X, l.Color.XY.Y, true
+		}
+		out[l.ID] = st
+	}
+	return out
+}
+
+// RestoreLight puts a light back as LightStates found it.
+func (h *Hue) RestoreLight(id string, st LightState) {
+	body := map[string]any{"on": map[string]bool{"on": st.On}, "dynamics": map[string]int64{"duration": 600}}
+	if st.On {
+		body["dimming"] = map[string]float64{"brightness": clampF(st.Bri, 1, 100)}
+		if st.HasColour {
+			body["color"] = map[string]any{"xy": map[string]float64{"x": st.X, "y": st.Y}}
+		}
+	}
+	_, _, _ = h.do("PUT", "/clip/v2/resource/light/"+id, body)
 }
 
 // AreaState reports whether the area is being streamed to, and by whom:

@@ -16,7 +16,7 @@ func TestPresets(t *testing.T) {
 	}
 	// Machine calibration survives a preset change; the look does not.
 	s := st.Settings()
-	s.LeadMs, s.FollowOnAir, s.DeckLink = 123, false, true
+	s.LeadMs, s.FollowOnAir, s.DeckLink, s.FollowerPairs = 123, false, true, true
 	if _, err := st.SetSettings(s); err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +24,7 @@ func TestPresets(t *testing.T) {
 		t.Fatal(err)
 	}
 	s = st.Settings()
-	if s.LeadMs != 123 || s.FollowOnAir || !s.DeckLink {
+	if s.LeadMs != 123 || s.FollowOnAir || !s.DeckLink || !s.FollowerPairs {
 		t.Fatalf("applying a preset must not touch lead or deck options: %+v", s)
 	}
 	if s.Effect != "wave" || s.ColorMode != "palette" || len(s.Palette) != 4 || st.PresetInfo().Active != "Sunset Wave" {

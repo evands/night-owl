@@ -103,6 +103,9 @@ func smooth(x float64) float64 { return x * x * (3 - 2*x) }
 type Channel struct {
 	ID      uint8
 	X, Y, Z float64
+	LightID string // the Hue light this channel belongs to
+	Name    string // that light's name
+	Slow    bool   // not in the streamed area: driven by ordinary light commands
 }
 
 // place is where a channel sits along the chosen direction of travel.

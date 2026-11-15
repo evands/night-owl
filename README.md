@@ -1,5 +1,7 @@
 # Night Owl
 
+*by Groove Formula*
+
 Philips Hue lights, and a full-screen visualizer, locked to the beat of
 Pioneer CDJs.
 
@@ -92,6 +94,20 @@ In the Hue app:
 5. Save the area.
 
 You can edit the positions later; restart the program to pick up changes.
+
+**More than ten lights.** A Hue Entertainment area holds at most ten
+lights, and a bridge streams to only one area at a time. For a bigger room,
+make further areas for the remaining lights, placing them in the same room
+layout as the first, and tick them all under **Lights** on the control
+page. The area with the most channels is streamed on every beat, as
+normal. Lights that are only in the other areas follow by ordinary
+commands, which the bridge limits to about ten a second: they take the
+show's colours and take turns flashing, one light on each beat, the turn
+moving across the room. An option under **Lights**, off by default,
+flashes two on each beat instead; that is about all the bridge accepts, so
+turn it off again if the followers lag or the streamed lights stutter. All of them share one room layout, so the colour
+spread and the direction of travel run across the lot. Put the lights
+that matter most in the biggest area.
 
 ### 3. Build the program
 

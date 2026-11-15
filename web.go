@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -19,11 +20,12 @@ var vizJS []byte
 
 // App ties the pieces together for the control page.
 type App struct {
-	engine      *Engine
+	show        atomic.Pointer[Show] // the lights being driven; swapped when the selected areas change
+	hue         *Hue
+	reconfig    chan struct{} // poked when the selected areas change
 	store       *Store
 	dj          *DJLink
 	tracker     *Tracker
-	area        Area
 	link        *VCDJ
 	linkAllowed bool
 	started     time.Time
@@ -74,7 +76,7 @@ func hexColour(c RGB) string {
 
 func (a *App) viz(now time.Time, ph Phase, s Settings) vizJSON {
 	v := vizJSON{Offbeat: s.OffbeatLevel, Drop: s.DropFlash > 0 && isDrop(ph)}
-	for _, c := range a.engine.Theme(now, ph, s, 5) {
+	for _, c := range a.show.Load().engine.Theme(now, ph, s, 5) {
 		v.Colors = append(v.Colors, hexColour(c))
 	}
 	if ph.Locked {
@@ -117,16 +119,82 @@ type lightJSON struct {
 	Y     float64 `json:"y"`
 	Z     float64 `json:"z"`
 	Color string  `json:"color"`
+	Slow  bool    `json:"slow,omitempty"` // a follower: ordinary commands, not the stream
 }
 
 func (a *App) lights(now time.Time, ph Phase, s Settings) []lightJSON {
-	cols := a.engine.Render(now, ph, s)
+	sh := a.show.Load()
+	cols := sh.engine.Render(now, ph, s)
+	lit := map[int]bool{} // the followers whose turn this beat is
+	for _, t := range sh.followerTurn(ph, s) {
+		lit[sh.followers[t].idx] = true
+	}
 	out := make([]lightJSON, len(cols))
 	b := func(v float64) int { return int(math.Sqrt(clampF(v, 0, 1))*255 + 0.5) } // brighten for screens
-	for i, c := range a.engine.chans {
-		out[i] = lightJSON{X: c.X, Y: c.Y, Z: c.Z, Color: fmt.Sprintf("#%02x%02x%02x", b(cols[i].R), b(cols[i].G), b(cols[i].B))}
+	for i, c := range sh.engine.chans {
+		col := cols[i]
+		if c.Slow && ph.Locked && !lit[i] {
+			// a follower between its flashes rests at the floor
+			if m := math.Max(col.R, math.Max(col.G, col.B)); m > 0 {
+				col = col.scale(math.Min(1, s.Floor/m))
+			}
+		}
+		out[i] = lightJSON{X: c.X, Y: c.Y, Z: c.Z, Slow: c.Slow, Color: fmt.Sprintf("#%02x%02x%02x", b(col.R), b(col.G), b(col.B))}
 	}
 	return out
+}
+
+// areaJSONOut is one Entertainment area as the control page lists it.
+type areaJSONOut struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Kind     string `json:"kind"`
+	Lights   int    `json:"lights"`
+	Channels int    `json:"channels"`
+	Selected bool   `json:"selected"`
+	Role     string `json:"role"`  // streamed | follows | ""
+	Extra    int    `json:"extra"` // lights this area adds beyond the streamed one
+}
+
+func (a *App) areaList() ([]areaJSONOut, string, error) {
+	areas, err := a.hue.Areas()
+	if err != nil {
+		return nil, "", err
+	}
+	sh := a.show.Load()
+	sel := map[string]bool{}
+	for _, id := range a.store.Config().SelectedAreas() {
+		sel[id] = true
+	}
+	streamed := map[string]bool{}
+	for _, c := range sh.streamCh {
+		streamed[c.LightID] = true
+	}
+	out := []areaJSONOut{}
+	for _, ar := range areas {
+		o := areaJSONOut{ID: ar.ID, Name: ar.Name, Kind: ar.Type, Lights: len(ar.Lights), Channels: len(ar.Channels), Selected: sel[ar.ID]}
+		for _, l := range ar.Lights {
+			if !streamed[l.ID] {
+				o.Extra++
+			}
+		}
+		switch {
+		case ar.ID == sh.stream.ID:
+			o.Role = "streamed"
+		case sel[ar.ID]:
+			o.Role = "follows"
+		}
+		out = append(out, o)
+	}
+	note := ""
+	if n := len(sh.followers); n > 0 {
+		per := sh.followersPerBeat(a.store.Settings())
+		note = fmt.Sprintf("%d lights follow by ordinary commands, taking turns to flash: %d on each beat, so each flashes about every %d beats", n, per, (n+per-1)/per)
+		if n == 1 {
+			note = "1 light follows by ordinary commands and flashes on every beat"
+		}
+	}
+	return out, note, nil
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -168,7 +236,7 @@ func (a *App) handler() http.Handler {
 			"settings": s,
 			"status": statusJSON{
 				Locked: ph.Locked, Player: ph.Player, BPM: math.Round(ph.BPM*100) / 100, BeatInBar: ph.BeatInBar,
-				Streaming: a.streaming.Load(), Error: a.errText(), Area: a.area.Name, Channels: len(a.area.Channels),
+				Streaming: a.streaming.Load(), Error: a.errText(), Area: strings.Join(a.show.Load().names, " + "), Channels: len(a.show.Load().engine.chans),
 				GearLost: len(devices) == 0 && now.Sub(a.started) > 10*time.Second,
 				Devices:  devices, Decks: a.tracker.Decks(now, s),
 				Lights: a.lights(now, ph, s),
@@ -192,6 +260,51 @@ func (a *App) handler() http.Handler {
 			return
 		}
 		writeJSON(w, s)
+	})
+	mux.HandleFunc("/api/areas", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			var req struct {
+				IDs []string `json:"ids"`
+			}
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<14)).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			areas, err := a.hue.Areas()
+			if err != nil {
+				http.Error(w, "cannot reach the Hue bridge: "+err.Error(), http.StatusBadGateway)
+				return
+			}
+			next, err := buildShow(areas, req.IDs)
+			if err != nil {
+				http.Error(w, "choose at least one area that has lights", http.StatusBadRequest)
+				return
+			}
+			var keep []string
+			for _, ar := range areas { // keep only ids the bridge has, in the bridge's order
+				for _, id := range req.IDs {
+					if id == ar.ID && len(ar.Channels) > 0 {
+						keep = append(keep, id)
+					}
+				}
+			}
+			if err := a.store.Update(func(c *Config) { c.Areas, c.AreaID, c.AreaName = keep, next.stream.ID, next.stream.Name }); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			select { // tell the light loop; it sets itself up again within a few seconds
+			case a.reconfig <- struct{}{}:
+			default:
+			}
+			writeJSON(w, map[string]any{"ok": true, "summary": next.describe()})
+			return
+		}
+		list, note, err := a.areaList()
+		if err != nil {
+			http.Error(w, "cannot reach the Hue bridge: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, map[string]any{"areas": list, "note": note})
 	})
 	mux.HandleFunc("/api/presets", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

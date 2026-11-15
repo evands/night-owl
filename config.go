@@ -61,6 +61,11 @@ type Settings struct {
 
 	// Visualizer
 	VizBars int `json:"viz_bars"` // bars between scene changes; 0 = only by hand
+
+	// Lights in extra areas ("followers") take turns flashing, one a beat.
+	// With this on, two flash on each beat: twice the commands, which is
+	// close to what the bridge accepts. Off by default.
+	FollowerPairs bool `json:"follower_pairs"`
 }
 
 func defaultSettings() Settings {
@@ -168,6 +173,7 @@ type Config struct {
 	Settings  Settings `json:"settings"`
 	Presets   []Preset `json:"presets"`
 	Preset    string   `json:"preset"` // name of the preset last applied or saved
+	Areas     []string `json:"areas"`  // ids of every selected Entertainment area; empty means just AreaID
 }
 
 // Store guards the config and persists changes.
@@ -242,4 +248,15 @@ func (st *Store) saveLocked() error {
 		return err
 	}
 	return os.WriteFile(st.path, data, 0o600)
+}
+
+// SelectedAreas is every area the show should cover.
+func (c Config) SelectedAreas() []string {
+	if len(c.Areas) > 0 {
+		return c.Areas
+	}
+	if c.AreaID != "" {
+		return []string{c.AreaID}
+	}
+	return nil
 }

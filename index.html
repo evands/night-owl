@@ -3,13 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CDJ Hue Sync</title>
+<title>Night Owl by Groove Formula</title>
 <style>
   :root { --bg:#0e0f13; --card:#181a21; --line:#2a2d38; --text:#eceef4; --dim:#9097a8; --accent:#7c5cff; --ok:#3ddc97; --warn:#ffb454; }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
   main { max-width: 760px; margin: 0 auto; padding: 16px; }
-  h1 { font-size: 18px; margin: 4px 0 12px; }
+  h1 { font-size: 20px; margin: 4px 0 12px; letter-spacing: -.01em; }
+  h1 small { font-size: 12.5px; font-weight: 500; color: var(--dim); letter-spacing: .02em; margin-left: 4px; white-space: nowrap; }
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 0 0 10px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
   .now { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
@@ -39,6 +40,10 @@
   .sw input[type=color] { width:44px; height:36px; padding:0; border:1px solid var(--line); border-radius:8px; background:none; }
   .sw button { padding:2px 7px; }
   .hidden { display:none; }
+  .arow { display:flex; align-items:center; gap:10px; padding:7px 0; border-top:1px solid var(--line); color:var(--text); font-size:15px; }
+  .arow:first-child { border-top:0; }
+  .arow small { color:var(--dim); margin-left:auto; text-align:right; }
+  .lamp.slow { border:1px dashed #fff8; }
   .prow { display:flex; align-items:center; gap:12px; }
   .prow select { flex:1; max-width:none; font-size:16px; font-weight:600; padding:9px 10px; }
   #pmod { color:var(--warn); font-size:12.5px; white-space:nowrap; }
@@ -56,7 +61,9 @@
   .vdots { display:flex; gap:10px; padding-bottom:.6em; }
   .vdots i { width:14px; height:14px; border-radius:50%; background:#fff3; transition:background .12s, transform .12s; }
   .vdots i.on { background:#fff; transform:scale(1.5); box-shadow:0 0 18px #fff; }
-  .vphr { font-size:clamp(14px,2.4vw,22px); letter-spacing:.14em; text-transform:uppercase; opacity:.85; padding-bottom:.5em; margin-left:auto; }
+  .vphr { font-size:clamp(14px,2.4vw,22px); letter-spacing:.14em; text-transform:uppercase; opacity:.85; padding-bottom:.5em; margin-left:auto; text-align:right; }
+  .vbrand { font-size:.62em; letter-spacing:.2em; opacity:.75; margin-top:.5em; text-align:right; }
+  .vbrand span { opacity:.7; }
   .vctl { display:flex; gap:8px; padding-bottom:.35em; pointer-events:none; }
   #viz.hud .vctl { pointer-events:auto; }
   .vctl button { background:#0007; border:1px solid #fff4; color:#fff; border-radius:999px; padding:8px 16px; font-size:15px; }
@@ -73,7 +80,7 @@
 </head>
 <body>
 <main>
-  <div class="top"><h1>CDJ Hue Sync</h1><button id="vopen" title="Full-screen visualizer in the lights' colours">Visualizer</button></div>
+  <div class="top"><h1>Night Owl <small>by Groove Formula</small></h1><button id="vopen" title="Full-screen visualizer in the lights' colours">Visualizer</button></div>
   <div id="alert" class="alert hidden"><b>No decks or mixer on the network.</b> The lights are idling until they come back. Check that the decks are on and their network switch is cabled to the router; see “If the decks do not show up” in the README.</div>
 
   <div class="card">
@@ -97,6 +104,15 @@
 
   <div id="groups"></div>
 
+  <div class="card">
+    <h2>Lights</h2>
+    <div id="areas" class="help">Loading the Entertainment areas…</div>
+    <div class="pbtn"><button id="aapply" disabled>Use these areas</button><span id="anote" class="help"></span></div>
+    <div class="row"><label><span>Flash two followers on each beat</span><input type="checkbox" id="fpairs"></label>
+      <div class="help">Normally the followers take turns one at a time. This sends twice as many commands, which is about all the bridge accepts while it is also streaming. If the followers start to lag, or the streamed lights stutter, turn it off.</div></div>
+    <div class="help">A Hue bridge streams to one Entertainment area at a time, and an area holds at most ten lights. For a bigger room, make more areas in the Hue app, place their lights in the same room layout, and tick them all here. The area with the most channels is streamed on every beat. Lights that are only in the other areas follow by ordinary commands, which the bridge accepts far more slowly: they take the show\u2019s colours and take turns flashing, one light on each beat, the turn moving across the room. Put the lights that matter most in the biggest area.</div>
+  </div>
+
   <footer>
     <span id="saved">Changes apply instantly and are saved.</span>
     <button id="reset">Reset to defaults</button>
@@ -109,7 +125,7 @@
   <div class="vhud" id="vhud">
     <div class="vbpm"><span id="vbpm">--</span><small>BPM</small></div>
     <div class="vdots"><i></i><i></i><i></i><i></i></div>
-    <div class="vphr" id="vphr"></div>
+    <div class="vphr"><span id="vphr"></span><div class="vbrand">Night Owl <span>by Groove Formula</span></div></div>
     <div class="vctl">
       <button id="vprev" aria-label="Previous scene">‹</button>
       <button id="vhold">Hold scene</button>
@@ -281,6 +297,42 @@ function build() {
   refresh();
 }
 
+// -------------------------------------------------------------------- areas
+let AREAS = [];
+async function loadAreas() {
+  const box = document.getElementById('areas');
+  try {
+    const d = await (await fetch('/api/areas')).json();
+    AREAS = d.areas; box.replaceChildren(); box.className = '';
+    d.areas.forEach(a => {
+      const cb = el('input', { type:'checkbox', checked:a.selected });
+      cb.onchange = () => { a.want = cb.checked; areasChanged(); };
+      a.want = a.selected;
+      const what = a.lights + (a.lights === 1 ? ' light' : ' lights') + (a.channels !== a.lights ? ', ' + a.channels + ' channels' : '');
+      const role = a.role === 'streamed' ? 'streamed on every beat' : a.role === 'follows' ? (a.extra ? 'adds ' + a.extra + ' following' : 'all its lights are already streamed') : (a.extra ? 'would add ' + a.extra : 'nothing new');
+      box.append(el('label', { className:'arow' }, cb, el('span', { textContent:a.name }), el('small', { textContent: what + ' · ' + role })));
+    });
+    document.getElementById('anote').textContent = d.note || '';
+    areasChanged();
+  } catch (e) { box.textContent = 'Could not read the Entertainment areas from the bridge.'; }
+}
+function areasChanged() {
+  const btn = document.getElementById('aapply');
+  btn.disabled = !AREAS.some(a => a.want !== a.selected) || !AREAS.some(a => a.want);
+}
+function wireAreas() {
+  const fp = document.getElementById('fpairs');
+  fp.onchange = () => { if (S) { S.follower_pairs = fp.checked; save(); setTimeout(loadAreas, 600); } };
+  document.getElementById('aapply').onclick = async () => {
+    const btn = document.getElementById('aapply'); btn.disabled = true;
+    const r = await fetch('/api/areas', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ ids: AREAS.filter(a => a.want).map(a => a.id) }) });
+    if (!r.ok) { alert((await r.text()).trim()); areasChanged(); return; }
+    document.getElementById('anote').textContent = 'Setting the lights up again…';
+    setTimeout(loadAreas, 4000);            // the lights pause for a few seconds while the stream restarts
+  };
+  loadAreas();
+}
+
 // ------------------------------------------------------------------ presets
 let P = { names: [], active: '', modified: false };
 function drawPresets(p) {
@@ -330,6 +382,8 @@ async function poll() {
     const d = await (await fetch('/api/state')).json(), st = d.status;
     vizSync(st, sent);
     if (d.presets) drawPresets(d.presets);
+    const fp = document.getElementById('fpairs');
+    if (S && Date.now() - lastEdit > 1500 && document.activeElement !== fp) fp.checked = !!S.follower_pairs;
     if (!S) { S = d.settings; server = copy(S); build(); }
     else if (Date.now() - lastEdit > 1500 && !same(d.settings, S)) {
       // changed somewhere else (another page, or the program itself): show it
@@ -363,7 +417,7 @@ async function poll() {
         const d = map.children[i + 1];
         // lights stacked at one spot (lamp segments) fan out by height
         d.style.left = `calc(${6 + (l.x + 1) * 44}% + ${l.z * 9}px)`; d.style.top = `calc(${6 + (1 - l.y) * 44}% - ${l.z * 9}px)`;
-        d.style.background = l.color; d.style.boxShadow = '0 0 10px ' + l.color;
+        d.style.background = l.color; d.style.boxShadow = '0 0 10px ' + l.color; d.classList.toggle('slow', !!l.slow);
       });
     }
     const worst = Math.max(0, ...st.decks.filter(x => x.playing && x.on_air && x.player === st.player).map(x => x.jitter_ms));
@@ -379,7 +433,7 @@ document.getElementById('reset').onclick = async () => {
   if (!confirm('Reset every setting to its default?')) return;
   S = await (await fetch('/api/reset', { method:'POST' })).json(); server = copy(S); build();
 };
-vizWire(); wirePresets();
+vizWire(); wirePresets(); wireAreas();
 poll(); setInterval(poll, 100);
 </script>
 </body>

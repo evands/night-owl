@@ -27,6 +27,10 @@ import (
 	"time"
 )
 
+// appName is how the program introduces itself. The command, its settings
+// folder and its service keep the short name cdjhue.
+const appName = "Night Owl by Groove Formula"
+
 // besideExe is where settings used to live: next to the program.
 func besideExe() string {
 	exe, err := os.Executable()
@@ -82,6 +86,7 @@ func main() {
 	linkNumber := flag.Int("link-number", 0, "player number for the deck link (0 = highest free of 4..1; 7 or more = status only, no track structure)")
 	retry := flag.Bool("retry", false, "keep trying if the Hue bridge cannot be reached at start (used by auto-start, when the network may not be up yet)")
 	flag.Usage = func() {
+		fmt.Fprintln(os.Stderr, appName)
 		fmt.Fprintln(os.Stderr, "Usage: cdjhue [options] [run|setup|listen]")
 		fmt.Fprintln(os.Stderr, "  run     sync the lights (default; runs setup first if needed)")
 		fmt.Fprintln(os.Stderr, "  setup   pair with a Hue bridge and choose an Entertainment area")
@@ -253,7 +258,7 @@ func connect(store *Store, bridgeIP string) (*Hue, []Area, error) {
 // chooseArea picks the Entertainment area, asking when there are several.
 func chooseArea(store *Store, areas []Area) (*Area, error) {
 	if len(areas) == 0 {
-		return nil, errors.New("this bridge has no Entertainment area: create one in the Hue app (Settings > Entertainment areas), then start cdjhue again")
+		return nil, errors.New("this bridge has no Entertainment area: create one in the Hue app (Settings > Entertainment areas), then start Night Owl again")
 	}
 	pick := 0
 	if len(areas) > 1 {
@@ -338,16 +343,16 @@ func autostart(arg string) error {
 		if err != nil {
 			return err
 		}
-		body := "@echo off\r\nstart \"cdjhue\" /min \"" + exe + "\" -open=false -retry\r\n"
+		body := "@echo off\r\nstart \"Night Owl\" /min \"" + exe + "\" -open=false -retry\r\n"
 		if err := os.WriteFile(launcher, []byte(body), 0o644); err != nil {
 			return err
 		}
-		fmt.Printf("cdjhue will now start when you sign in to Windows.\nLauncher: %s\nIt runs this copy: %s (run this again if you move the program).\n", launcher, exe)
+		fmt.Printf("Night Owl will now start when you sign in to Windows.\nLauncher: %s\nIt runs this copy: %s (run this again if you move the program).\n", launcher, exe)
 	case "off":
 		if err := os.Remove(launcher); err != nil && !os.IsNotExist(err) {
 			return err
 		}
-		fmt.Println("cdjhue will no longer start with Windows.")
+		fmt.Println("Night Owl will no longer start with Windows.")
 	default:
 		if _, err := os.Stat(launcher); err == nil {
 			fmt.Println("Auto-start is on. Use: cdjhue autostart off")
@@ -359,8 +364,9 @@ func autostart(arg string) error {
 }
 
 func run(store *Store, bridgeIP, uiAddr string, open, takeover, retry bool, linkNumber int) error {
+	log.Print(appName)
 	if url := alreadyRunning(uiAddr); url != "" {
-		log.Printf("cdjhue is already running on this computer; its control page is %s", url)
+		log.Printf("Night Owl is already running on this computer; its control page is %s", url)
 		log.Printf("close that copy first if you want to start a new one")
 		if open {
 			openBrowser(url)
@@ -407,8 +413,18 @@ func run(store *Store, bridgeIP, uiAddr string, open, takeover, retry bool, link
 	tracker.link = NewVCDJ(dj, tracker.phrases, tracker.OnStatus)
 	tracker.link.forceNumber = linkNumber
 	go tracker.Run()
-	engine := NewEngine(area.Channels)
-	app := &App{engine: engine, store: store, dj: dj, tracker: tracker, link: tracker.link, linkAllowed: true, area: *area, started: time.Now()}
+	if len(store.Config().Areas) == 0 {
+		_ = store.Update(func(c *Config) { c.Areas = []string{area.ID} })
+	}
+	first, err := buildShow(areas, store.Config().SelectedAreas())
+	if err != nil { // the saved selection is stale: fall back to the main area
+		_ = store.Update(func(c *Config) { c.Areas = []string{area.ID} })
+		if first, err = buildShow(areas, []string{area.ID}); err != nil {
+			return err
+		}
+	}
+	app := &App{hue: hue, reconfig: make(chan struct{}, 1), store: store, dj: dj, tracker: tracker, link: tracker.link, linkAllowed: true, started: time.Now()}
+	app.show.Store(first)
 	// Only the copy that is driving the lights joins the DJ network. A copy
 	// standing by has no use for it, and the decks see one extra player
 	// instead of several.
@@ -443,42 +459,81 @@ func run(store *Store, bridgeIP, uiAddr string, open, takeover, retry bool, link
 	// starts, and if another app takes them later it waits its turn instead
 	// of fighting back.
 	for ctx.Err() == nil {
-		err := stream(ctx, hue, app, engine, takeover)
-		takeover = false
-		app.streaming.Store(false)
+		sh := app.show.Load()
+		// One session with the current selection of areas. It ends when
+		// the program is stopping or the selection changes.
+		sctx, cancel := context.WithCancel(ctx)
+		go func() {
+			select {
+			case <-app.reconfig:
+				cancel()
+			case <-sctx.Done():
+			}
+		}()
+		followed := make(chan struct{})
+		go func() { sh.follow(sctx, hue, app); close(followed) }()
+		for sctx.Err() == nil {
+			err := stream(sctx, hue, app, sh, takeover)
+			takeover = false
+			app.streaming.Store(false)
+			if sctx.Err() != nil {
+				break
+			}
+			if err != nil {
+				app.lastErr.Store(err.Error())
+			}
+			if errors.Is(err, errBusy) {
+				log.Printf("another app is driving these lights: waiting for it to finish")
+				for sctx.Err() == nil {
+					if state, serr := hue.AreaState(sh.stream.ID); serr == nil && state != "other" {
+						break
+					}
+					select {
+					case <-sctx.Done():
+					case <-time.After(3 * time.Second):
+					}
+				}
+				continue
+			}
+			log.Printf("light stream stopped (%v); retrying in 2 s", err)
+			select {
+			case <-sctx.Done():
+			case <-time.After(2 * time.Second):
+			}
+		}
+		cancel()
+		<-followed
+		_ = hue.StopStream(sh.stream.ID)
 		if ctx.Err() != nil {
 			break
 		}
-		if err != nil {
-			app.lastErr.Store(err.Error())
-		}
-		if errors.Is(err, errBusy) {
-			log.Printf("another app is driving these lights: waiting for it to finish")
-			for ctx.Err() == nil {
-				if state, serr := hue.AreaState(area.ID); serr == nil && state != "other" {
+		// The selection changed: lay the room out again and carry on.
+		log.Printf("the selected areas changed: setting the lights up again")
+		for ctx.Err() == nil {
+			areas, err := hue.Areas()
+			if err == nil {
+				var next *Show
+				if next, err = buildShow(areas, store.Config().SelectedAreas()); err == nil {
+					app.show.Store(next)
+					log.Printf("lights: %s", next.describe())
 					break
 				}
-				select {
-				case <-ctx.Done():
-				case <-time.After(3 * time.Second):
-				}
 			}
-			continue
-		}
-		log.Printf("light stream stopped (%v); retrying in 2 s", err)
-		select {
-		case <-ctx.Done():
-		case <-time.After(2 * time.Second):
+			log.Printf("cannot set the lights up (%v); trying again in 5 s", err)
+			select {
+			case <-ctx.Done():
+			case <-time.After(5 * time.Second):
+			}
 		}
 	}
 	log.Printf("stopping: handing the lights back")
-	return hue.StopStream(area.ID)
+	return nil
 }
 
 // stream runs one streaming session: 50 frames a second until it fails or
 // the app is asked to stop.
-func stream(ctx context.Context, hue *Hue, app *App, engine *Engine, takeover bool) error {
-	area := app.area
+func stream(ctx context.Context, hue *Hue, app *App, sh *Show, takeover bool) error {
+	area := sh.stream
 	if err := hue.StartStream(area.ID, takeover); err != nil {
 		return fmt.Errorf("bridge did not start streaming: %w", err)
 	}
@@ -524,6 +579,7 @@ func stream(ctx context.Context, hue *Hue, app *App, engine *Engine, takeover bo
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	var seq uint8
+	cols := make([]RGB, len(sh.streamCh))
 	for {
 		select {
 		case <-ctx.Done():
@@ -535,8 +591,11 @@ func stream(ctx context.Context, hue *Hue, app *App, engine *Engine, takeover bo
 		now := time.Now()
 		s := app.store.Settings()
 		ph := app.tracker.Phase(now, s)
-		cols := engine.Render(now, ph, s)
-		if _, err := conn.Write(frame(seq, area.ID, engine.chans, cols)); err != nil {
+		all := sh.engine.Render(now, ph, s)
+		for i, at := range sh.streamIdx {
+			cols[i] = all[at]
+		}
+		if _, err := conn.Write(frame(seq, area.ID, sh.streamCh, cols)); err != nil {
 			return err
 		}
 		seq++

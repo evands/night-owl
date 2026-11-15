@@ -75,7 +75,7 @@ func keepAlive(number int, mac net.HardwareAddr, ip net.IP) []byte {
 	p := make([]byte, 0x36)
 	copy(p, djMagic)
 	p[0x0a] = 0x06
-	copy(p[0x0c:0x20], "cdjhue")
+	copy(p[0x0c:0x20], "Night Owl")
 	p[0x20], p[0x21] = 0x01, 0x02
 	p[0x23] = 0x36 // packet length
 	p[0x24] = byte(number)

@@ -1,5 +1,5 @@
 [Unit]
-Description=cdjhue: sync Philips Hue lights to Pioneer CDJs
+Description=Night Owl by Groove Formula: Philips Hue lights in time with Pioneer CDJs
 Documentation=file:///opt/cdjhue/README.md
 After=network-online.target
 Wants=network-online.target

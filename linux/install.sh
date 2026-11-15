@@ -50,8 +50,8 @@ fi
 
 # Open the control page and the decks' ports if a firewall is running.
 if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
-  ufw allow 8600/tcp comment "cdjhue control page" >/dev/null
-  ufw allow 50000:50002/udp comment "cdjhue: Pioneer DJ link" >/dev/null
+  ufw allow 8600/tcp comment "Night Owl control page" >/dev/null
+  ufw allow 50000:50002/udp comment "Night Owl: Pioneer DJ link" >/dev/null
   echo "firewall: opened 8600/tcp and 50000-50002/udp"
 fi
 
