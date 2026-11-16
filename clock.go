@@ -132,6 +132,7 @@ func (c *deckClock) spread() float64 {
 // Phase is where the music is at one instant.
 type Phase struct {
 	Locked    bool
+	Source    string // "link" when the beat comes from Ableton Link; empty for a deck
 	Player    int
 	BPM       float64
 	Period    float64 // seconds per beat
@@ -163,6 +164,8 @@ type DeckStatus struct {
 type Tracker struct {
 	mu      sync.Mutex
 	dj      *DJLink
+	ab      *AbletonLink // nil-safe: a second source of beats, for software with no DJ Link
+	onLink  bool         // the last beat came from Ableton Link
 	link    *VCDJ        // nil-safe: deck status when the deck link is on
 	phrases *PhraseStore // track structures fetched from the decks
 	clocks  map[int]*deckClock
@@ -244,7 +247,44 @@ func (t *Tracker) deckFacts(c *deckClock, now time.Time, s Settings, flags [4]bo
 // now+lead. With the deck link on, the tempo master leads whenever it is
 // playing on air, which is what a DJ means by "the deck in charge" during a
 // blend. Otherwise a deck stays chosen until it stops or leaves the air.
+// Phase is the beat the lights should show at a moment. It comes from a
+// playing deck when there is one, and otherwise from an Ableton Link
+// session, unless the settings name one source.
 func (t *Tracker) Phase(now time.Time, s Settings) Phase {
+	if s.BeatSource != "link" {
+		if ph := t.deckPhase(now, s); ph.Locked || s.BeatSource == "decks" {
+			t.noteLink(false, 0)
+			return ph
+		}
+	}
+	st, ok := t.ab.State(now.Add(secs(s.LeadMs / 1000)))
+	t.noteLink(ok, st.BPM)
+	if !ok {
+		return Phase{}
+	}
+	fl := math.Floor(st.Beat)
+	return Phase{
+		Locked: true, Source: "link", BPM: st.BPM, Period: 60 / st.BPM,
+		Frac: st.Beat - fl, BeatIdx: int64(fl), BeatInBar: int(mod(int64(fl), 4)) + 1, Energy: 1,
+	}
+}
+
+// noteLink logs when the lights start or stop following Ableton Link.
+func (t *Tracker) noteLink(on bool, bpm float64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if on == t.onLink {
+		return
+	}
+	if t.onLink = on; on {
+		log.Printf("following Ableton Link at %.2f BPM", bpm)
+	} else {
+		log.Printf("no longer following Ableton Link")
+	}
+}
+
+// deckPhase is the beat of the deck the lights follow, if one is playing.
+func (t *Tracker) deckPhase(now time.Time, s Settings) Phase {
 	flags, fresh := t.dj.OnAir(now)
 	t.mu.Lock()
 	defer t.mu.Unlock()

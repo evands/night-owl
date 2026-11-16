@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -132,10 +133,13 @@ func main() {
 }
 
 // warnIfSilent explains the usual causes when no DJ gear is heard.
-func warnIfSilent(dj *DJLink) {
+func warnIfSilent(dj *DJLink, ab *AbletonLink) {
 	time.Sleep(10 * time.Second)
-	if len(dj.Devices(time.Now())) > 0 {
+	if len(dj.Devices(time.Now())) > 0 || dj.StartErr() != "" {
 		return
+	}
+	if n, _, _, _ := ab.Info(); n > 0 {
+		return // beats are coming from Ableton Link instead
 	}
 	log.Printf("No DJ gear heard after 10 s. Check that:")
 	log.Printf("  1. the decks' network switch is cabled to the router;")
@@ -146,22 +150,43 @@ func warnIfSilent(dj *DJLink) {
 // listen prints gear and beats: a quick check that the decks are reachable.
 func listen() error {
 	dj := NewDJLink()
-	if err := dj.Start(); err != nil {
-		return err
-	}
-	go warnIfSilent(dj)
-	fmt.Println("Listening for Pioneer DJ gear (Ctrl-C to stop)...")
+	dj.StartOrRetry()
+	ab := NewAbletonLink()
+	go ab.Run()
+	go warnIfSilent(dj, ab)
+	fmt.Println("Listening for Pioneer DJ gear and Ableton Link (Ctrl-C to stop)...")
 	seen := map[int]bool{}
 	tick := time.NewTicker(time.Second)
+	fast := time.NewTicker(5 * time.Millisecond)
+	lastLink, linkPeers := int64(math.MinInt64), -1
 	for {
 		select {
 		case b := <-dj.Beats:
 			fmt.Printf("%s  deck %d  beat %d  %.2f BPM\n", b.At.Format("15:04:05.000"), b.Player, b.BeatInBar, b.BPM)
+		case now := <-fast.C:
+			// Print each Link beat as it passes.
+			if st, ok := ab.State(now); ok {
+				if n := int64(math.Floor(st.Beat)); n != lastLink {
+					lastLink = n
+					fmt.Printf("%s  Ableton Link  beat %d  %.2f BPM\n", now.Format("15:04:05.000"), mod(n, 4)+1, st.BPM)
+				}
+			}
 		case now := <-tick.C:
 			for _, d := range dj.Devices(now) {
 				if !seen[d.Number] {
 					seen[d.Number] = true
 					fmt.Printf("found %s (#%d) at %s\n", d.Name, d.Number, d.IP)
+				}
+			}
+			if n, bpm, ready, note := ab.Info(); n != linkPeers {
+				linkPeers = n
+				switch {
+				case n == 0:
+					fmt.Printf("Ableton Link: %s\n", note)
+				case ready:
+					fmt.Printf("Ableton Link: %d program(s) at %.2f BPM\n", n, bpm)
+				default:
+					fmt.Printf("Ableton Link: %d program(s) at %.2f BPM (%s)\n", n, bpm, note)
 				}
 			}
 		}
@@ -404,11 +429,12 @@ func run(store *Store, bridgeIP, uiAddr string, open, takeover, retry bool, link
 	}
 
 	dj := NewDJLink()
-	if err := dj.Start(); err != nil {
-		return err
-	}
-	go warnIfSilent(dj)
+	dj.StartOrRetry()
+	ab := NewAbletonLink()
+	go ab.Run()
+	go warnIfSilent(dj, ab)
 	tracker := NewTracker(dj)
+	tracker.ab = ab
 	tracker.phrases = NewPhraseStore()
 	tracker.link = NewVCDJ(dj, tracker.phrases, tracker.OnStatus)
 	tracker.link.forceNumber = linkNumber

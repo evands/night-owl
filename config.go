@@ -46,6 +46,10 @@ type Settings struct {
 	IdleBrightness float64 `json:"idle_brightness"`
 	IdleCycleS     float64 `json:"idle_cycle_s"` // seconds to drift through the colours
 
+	// Where the beat comes from: "auto" (a playing deck, else Ableton
+	// Link), "decks" (PRO DJ LINK only) or "link" (Ableton Link only).
+	BeatSource string `json:"beat_source"`
+
 	// Deck selection
 	FollowOnAir bool `json:"follow_on_air"` // only follow decks whose mixer channel is live
 
@@ -80,8 +84,8 @@ func defaultSettings() Settings {
 		Palette:    []string{"#ff0040", "#7a00ff", "#0060ff", "#00e0ff"},
 		ColorBeats: 16, ColorFadeMs: 400, ColorSpread: 0.35,
 		IdleBrightness: 0.25, IdleCycleS: 30,
-		FollowOnAir: true,
-		DeckLink:    false, EnergyFollow: 0.6, DropFlash: 0.7,
+		FollowOnAir: true, BeatSource: "auto",
+		DeckLink: false, EnergyFollow: 0.6, DropFlash: 0.7,
 		VizBars:  16,
 		FillBars: 16,
 	}
@@ -124,6 +128,11 @@ func (s *Settings) sanitize() {
 	case "pulse", "wave", "alternate", "sides", "chase", "sparkle", "bounce", "auto":
 	default:
 		s.Effect = d.Effect
+	}
+	switch s.BeatSource {
+	case "auto", "decks", "link":
+	default:
+		s.BeatSource = d.BeatSource
 	}
 	switch s.Axis {
 	case "x", "y", "z", "radial":

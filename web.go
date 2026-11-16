@@ -81,6 +81,7 @@ func (a *App) errText() string {
 
 type statusJSON struct {
 	Locked    bool         `json:"locked"`
+	Source    string       `json:"source"` // "link" when following Ableton Link, "decks" when following a deck
 	Player    int          `json:"player"`
 	BPM       float64      `json:"bpm"`
 	BeatInBar int          `json:"beat_in_bar"`
@@ -94,6 +95,8 @@ type statusJSON struct {
 	Decks     []DeckStatus `json:"decks"`
 	Lights    []lightJSON  `json:"lights"`
 	Link      linkJSON     `json:"link"`
+	AbLink    abLinkJSON   `json:"ablink"`
+	DeckError string       `json:"deck_error"` // why decks cannot be heard, if the port is taken
 	Phrase    phraseJSON   `json:"phrase"`
 	Viz       vizJSON      `json:"viz"`
 }
@@ -137,6 +140,14 @@ func (a *App) viz(now time.Time, ph Phase, s Settings) vizJSON {
 }
 
 // linkJSON describes the optional deck link.
+// abLinkJSON describes the Ableton Link session being heard, if any.
+type abLinkJSON struct {
+	Peers int     `json:"peers"`
+	BPM   float64 `json:"bpm"`
+	Ready bool    `json:"ready"`
+	Note  string  `json:"note"`
+}
+
 type linkJSON struct {
 	Allowed bool   `json:"allowed"` // false unless started with -experimental-deck-link
 	Active  bool   `json:"active"`
@@ -270,6 +281,15 @@ func (a *App) handler() http.Handler {
 			link.Active, link.Number, link.Note = a.link.Info()
 		}
 		paused, _ := a.pauseState()
+		var ab abLinkJSON
+		ab.Peers, ab.BPM, ab.Ready, ab.Note = a.tracker.ab.Info()
+		ab.BPM = math.Round(ab.BPM*100) / 100
+		source := ""
+		if ph.Locked {
+			if source = "decks"; ph.Source != "" {
+				source = ph.Source
+			}
+		}
 		phrase := phraseJSON{Known: ph.PhraseKnown, Label: ph.PhraseLabel, Energy: ph.Energy, Beat: ph.PhraseBeat, TrackBeat: ph.TrackBeat}
 		if ph.Structure != nil {
 			phrase.Phrases = len(ph.Structure.Phrases)
@@ -278,9 +298,9 @@ func (a *App) handler() http.Handler {
 			"presets":  a.store.PresetInfo(),
 			"settings": s,
 			"status": statusJSON{
-				Locked: ph.Locked, Player: ph.Player, BPM: math.Round(ph.BPM*100) / 100, BeatInBar: ph.BeatInBar,
+				Locked: ph.Locked, Source: source, AbLink: ab, DeckError: a.dj.StartErr(), Player: ph.Player, BPM: math.Round(ph.BPM*100) / 100, BeatInBar: ph.BeatInBar,
 				Streaming: a.streaming.Load(), Paused: paused, Error: a.errText(), Area: strings.Join(a.show.Load().names, " + "), Channels: len(a.show.Load().engine.chans),
-				GearLost: len(devices) == 0 && now.Sub(a.started) > 10*time.Second,
+				GearLost: len(devices) == 0 && ab.Peers == 0 && s.BeatSource != "link" && now.Sub(a.started) > 10*time.Second,
 				Devices:  devices, Decks: a.tracker.Decks(now, s),
 				Lights: a.lights(now, ph, s),
 				Link:   link, Phrase: phrase, Viz: a.viz(now, ph, s),

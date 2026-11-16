@@ -38,6 +38,7 @@ type DJLink struct {
 	Beats chan BeatPacket
 
 	mu        sync.Mutex
+	startErr  string // why the decks cannot be heard, if the ports could not be opened
 	self      string // our own address when the deck link is on, so we do not list ourselves
 	devices   map[int]*Device
 	onAir     [4]bool
@@ -53,6 +54,40 @@ func listenUDP(port int) (net.PacketConn, error) {
 	return lc.ListenPacket(context.Background(), "udp4", fmt.Sprintf(":%d", port))
 }
 
+// StartOrRetry starts listening. If the ports are taken it says so once,
+// carries on (beats can still come from Ableton Link) and tries again every
+// few seconds, so closing the other program is enough.
+func (d *DJLink) StartOrRetry() {
+	err := d.Start()
+	if err == nil {
+		return
+	}
+	log.Printf("%v", err)
+	log.Printf("Carrying on without the decks for now: this is tried again every few seconds, and beats can still come from Ableton Link.")
+	d.mu.Lock()
+	d.startErr = "UDP port 50001 is held by another program on this computer (rekordbox does that)"
+	d.mu.Unlock()
+	go func() {
+		for {
+			time.Sleep(5 * time.Second)
+			if d.Start() == nil {
+				log.Printf("now listening for decks")
+				d.mu.Lock()
+				d.startErr = ""
+				d.mu.Unlock()
+				return
+			}
+		}
+	}()
+}
+
+// StartErr says why the decks cannot be heard, or "" if they can.
+func (d *DJLink) StartErr() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.startErr
+}
+
 // Start opens the sockets and begins listening in the background.
 func (d *DJLink) Start() error {
 	beatConn, err := listenUDP(50001)
@@ -62,7 +97,7 @@ func (d *DJLink) Start() error {
 		return fmt.Errorf("cannot listen for beats on UDP port 50001 (%v).\n"+
 			"Another program on this computer is probably holding the port: rekordbox does, "+
 			"and so can its helper PSvLinkSysMgr.exe after rekordbox is closed.\n"+
-			"Close rekordbox (and end PSvLinkSysMgr.exe if it lingers), then start Night Owl again", err)
+			"Close rekordbox (and end PSvLinkSysMgr.exe if it lingers) to listen to decks", err)
 	}
 	go d.readLoop(beatConn, d.handleBeatPort)
 	// Port 50000 only adds device names a little sooner; beats do not need it.

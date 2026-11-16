@@ -18,14 +18,14 @@ type Preset struct {
 
 // lookOf blanks the machine-specific fields, leaving only the look.
 func lookOf(s Settings) Settings {
-	s.LeadMs, s.StopBeats, s.FollowOnAir, s.DeckLink, s.FollowerPairs = 0, 0, false, false, false
+	s.LeadMs, s.StopBeats, s.FollowOnAir, s.DeckLink, s.FollowerPairs, s.BeatSource = 0, 0, false, false, false, ""
 	return s
 }
 
 // withLook returns cur with the look replaced and its machine fields kept.
 func withLook(cur, look Settings) Settings {
 	look.LeadMs, look.StopBeats, look.FollowOnAir, look.DeckLink = cur.LeadMs, cur.StopBeats, cur.FollowOnAir, cur.DeckLink
-	look.FollowerPairs = cur.FollowerPairs
+	look.FollowerPairs, look.BeatSource = cur.FollowerPairs, cur.BeatSource
 	look.Palette = append([]string(nil), look.Palette...)
 	look.sanitize()
 	return look

@@ -199,7 +199,10 @@ of the page.
 - **Colour:** either a hue range or hand-picked colours, how often the
   colour changes, the crossfade, and how much it varies across the room.
 - **Visualizer:** how often its scene changes.
-- **Deck selection** and **Track structure and blends:** see below.
+- **Beat source:** where the beat comes from. Left on automatic, it
+  follows a playing deck, and an Ableton Link session when no deck is
+  playing. See "DJ software with a controller" below.
+- **Track structure and blends:** see below.
 
 ## The visualizer
 
@@ -241,6 +244,39 @@ decks felt sluggish once while it was on, which was never explained and
 has not recurred. If your decks ever feel slow with it on, turn it off.
 With it on, the log records every change of SYNC and tempo master on each
 deck.
+
+## DJ software with a controller (Ableton Link)
+
+A USB controller such as a DDJ-FLX6 has no network port and sends no
+beats: the beat lives in the DJ software on the laptop. Night Owl can
+take it from there over Ableton Link, which rekordbox (Performance mode),
+Serato, Traktor and many other programs support.
+
+1. Put the laptop on the same network as the computer running Night Owl
+   (or run Night Owl on the laptop itself).
+2. In the DJ software, switch **LINK** on, and switch each deck to LINK
+   so it plays in time with the Link tempo.
+3. The control page shows "Ableton Link: 1 program at 126.00 BPM" and
+   then "Following Ableton Link".
+
+What to expect:
+
+- Link is a shared metronome. Decks have to be synced to it, and the
+  software's Link panel sets the tempo; a deck playing off the Link grid
+  is not followed.
+- The lights keep pulsing while the Link session exists, whether or not
+  a track is playing. Use Pause at the top of the control page between
+  sets.
+- There is no mixer or phrase information over Link, so build-ups count
+  bars rather than following the track.
+- Night Owl only listens. It never joins the session and cannot change
+  the tempo.
+- On Windows, rekordbox holds the port Pioneer decks use, so with
+  rekordbox open Night Owl hears Link but not decks. It says so on the
+  control page and picks the decks up again when rekordbox closes.
+
+This part is new and has been tested against a simulated Link program
+only, not yet against rekordbox or Serato.
 
 ## Several computers
 

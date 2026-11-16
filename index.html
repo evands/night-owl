@@ -184,7 +184,8 @@ const GROUPS = [
     { k:'idle_brightness', label:'Idle brightness', min:0, max:1, step:0.01, fmt:pct },
     { k:'idle_cycle_s', label:'Idle colour drift', min:2, max:300, step:1, fmt:v=>v+' s', help:'Time to drift through all the colours.' },
   ]},
-  { title: 'Deck selection', items: [
+  { title: 'Beat source', items: [
+    { k:'beat_source', label:'Take the beat from', type:'select', options:[['auto','Decks, or Ableton Link when no deck is playing'],['decks','Pioneer decks only (PRO DJ LINK)'],['link','Ableton Link only']], help:'Pioneer players on a network cable send their beat themselves. DJ software with a USB controller (rekordbox in Performance mode, Serato, Traktor) does not, but can share its tempo and beat over Ableton Link: switch LINK on in that software, and on each deck. Night Owl only listens to Link; it never changes the tempo.' },
     { k:'follow_on_air', label:'Only follow decks that are live on the mixer', type:'check', help:'Ignores a deck being cued in headphones. Turn off if there is no DJM on the link.' },
   ]},
   { title: 'Track structure and blends', items: [
@@ -415,13 +416,18 @@ async function poll() {
     }
     document.getElementById('bpm').textContent = st.locked ? st.bpm.toFixed(2) : '--';
     document.querySelectorAll('.dot').forEach((dot, i) => { dot.className = 'dot' + (st.locked && st.beat_in_bar === i + 1 ? ' on' + (i === 0 ? ' one' : '') : ''); });
-    document.getElementById('following').textContent = st.locked ? 'Following deck ' + st.player : 'Waiting for a deck';
+    const viaLink = st.source === 'link', n = st.ablink.peers;
+    document.getElementById('following').textContent = !st.locked ? (S.beat_source === 'link' ? 'Waiting for Ableton Link' : S.beat_source === 'decks' ? 'Waiting for a deck' : 'Waiting for a deck or Ableton Link')
+      : viaLink ? 'Following Ableton Link' : 'Following deck ' + st.player;
     document.getElementById('alert').classList.toggle('hidden', !st.gear_lost);
     if (Date.now() - pauseSent > 1500) drawPause(st.paused);
     const ln = document.getElementById('linknote');
     if (ln) ln.textContent = 'Deck link: ' + st.link.note + (st.phrase.known ? ` \u00b7 now in \u201c${st.phrase.label}\u201d (energy ${Math.round(st.phrase.energy * 100)}%, ${st.phrase.phrases} phrases in this track)` : (st.link.active && st.phrase.track_beat ? ` \u00b7 beat ${st.phrase.track_beat} of the track, no phrase analysis yet` : ''));
     const gear = document.getElementById('gear'); gear.replaceChildren();
-    if (!st.devices.length) gear.textContent = 'No DJ gear heard on the network yet.';
+    if (!st.devices.length && !n) gear.textContent = st.deck_error ? '' : 'No DJ gear heard on the network yet.';
+    if (st.deck_error && S.beat_source !== 'link') gear.append(el('span', { className:'pill warn', textContent:'Decks: cannot listen. ' + st.deck_error + '.' }));
+    if (n || S.beat_source === 'link') gear.append(el('span', { className:'pill' + (viaLink ? ' live' : n && !st.ablink.ready ? ' warn' : ''),
+      textContent: n ? `Ableton Link: ${n} program${n > 1 ? 's' : ''} at ${st.ablink.bpm.toFixed(2)} BPM` + (st.ablink.ready ? '' : ' (' + st.ablink.note + ')') : 'Ableton Link: ' + st.ablink.note }));
     st.devices.forEach(dev => {
       const deck = st.decks.find(x => x.player === dev.number);
       let cls = 'pill', txt = dev.name + ' #' + dev.number;
