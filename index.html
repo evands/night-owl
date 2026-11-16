@@ -51,6 +51,11 @@
   .pbtn button:disabled { opacity:.4; cursor:default; }
   .top { display:flex; justify-content:space-between; align-items:center; gap:12px; }
   #vopen { background:linear-gradient(135deg,#7c5cff,#ff5ca8); border:0; color:#fff; font-weight:600; padding:8px 14px; }
+  .topbtn { display:flex; gap:8px; flex-shrink:0; }
+  #pause { font-weight:600; padding:8px 14px; min-width:92px; }
+  #pause.paused { background:var(--warn); border-color:var(--warn); color:#17130a; }
+  #pause:disabled { opacity:.5; cursor:default; }
+  #map.paused { opacity:.3; }
   #viz { position:fixed; inset:0; z-index:50; background:#000; overflow:hidden; cursor:none; }
   #viz.hud { cursor:default; }
   #vizc { width:100%; height:100%; display:block; }
@@ -80,7 +85,7 @@
 </head>
 <body>
 <main>
-  <div class="top"><h1>Night Owl <small>by Groove Formula</small></h1><button id="vopen" title="Full-screen visualizer in the lights' colours">Visualizer</button></div>
+  <div class="top"><h1>Night Owl <small>by Groove Formula</small></h1><div class="topbtn"><button id="pause" disabled title="Pause the light sync and hand the lights back, or start it again">Pause</button><button id="vopen" title="Full-screen visualizer in the lights' colours">Visualizer</button></div></div>
   <div id="alert" class="alert hidden"><b>No decks or mixer on the network.</b> The lights are idling until they come back. Check that the decks are on and their network switch is cabled to the router; see “If the decks do not show up” in the README.</div>
 
   <div class="card">
@@ -376,6 +381,24 @@ function wirePresets() {
   };
 }
 
+// The Pause button: pausing hands the lights back; Start takes them again.
+let paused = false, pauseSent = 0;
+function drawPause(p) {
+  paused = !!p;
+  const b = document.getElementById('pause');
+  b.disabled = false; b.textContent = paused ? 'Start' : 'Pause'; b.classList.toggle('paused', paused);
+  b.setAttribute('aria-pressed', paused);
+  const map = document.getElementById('map'); if (map) map.classList.toggle('paused', paused);
+}
+document.getElementById('pause').onclick = async () => {
+  const want = !paused;
+  pauseSent = Date.now(); drawPause(want);
+  try {
+    const r = await fetch('/api/pause', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ paused: want }) });
+    if (!r.ok) throw new Error(await r.text());
+  } catch (e) { pauseSent = 0; drawPause(!want); }
+};
+
 async function poll() {
   try {
     const sent = performance.now();
@@ -394,6 +417,7 @@ async function poll() {
     document.querySelectorAll('.dot').forEach((dot, i) => { dot.className = 'dot' + (st.locked && st.beat_in_bar === i + 1 ? ' on' + (i === 0 ? ' one' : '') : ''); });
     document.getElementById('following').textContent = st.locked ? 'Following deck ' + st.player : 'Waiting for a deck';
     document.getElementById('alert').classList.toggle('hidden', !st.gear_lost);
+    if (Date.now() - pauseSent > 1500) drawPause(st.paused);
     const ln = document.getElementById('linknote');
     if (ln) ln.textContent = 'Deck link: ' + st.link.note + (st.phrase.known ? ` \u00b7 now in \u201c${st.phrase.label}\u201d (energy ${Math.round(st.phrase.energy * 100)}%, ${st.phrase.phrases} phrases in this track)` : (st.link.active && st.phrase.track_beat ? ` \u00b7 beat ${st.phrase.track_beat} of the track, no phrase analysis yet` : ''));
     const gear = document.getElementById('gear'); gear.replaceChildren();
@@ -422,7 +446,7 @@ async function poll() {
     }
     const worst = Math.max(0, ...st.decks.filter(x => x.playing && x.on_air && x.player === st.player).map(x => x.jitter_ms));
     const lights = document.getElementById('lights'); lights.replaceChildren();
-    lights.append(el('span', { className:'pill' + (st.streaming ? ' live' : ' warn'), textContent: st.streaming ? `Lights: streaming to “${st.area}” (${st.channels} channels)` : 'Lights: not streaming' + (st.error ? ' (' + st.error + ')' : '') }));
+    lights.append(el('span', { className:'pill' + (st.streaming ? ' live' : ' warn'), textContent: st.paused ? 'Lights: paused. Press Start at the top to sync again.' : st.streaming ? `Lights: streaming to “${st.area}” (${st.channels} channels)` : 'Lights: not streaming' + (st.error ? ' (' + st.error + ')' : '') }));
     if (worst > 30) lights.append(el('span', { className:'pill warn', textContent:`Network jitter ${worst} ms: a wired connection will tighten the sync` }));
   } catch (e) {
     document.getElementById('following').textContent = 'App not reachable';

@@ -215,12 +215,27 @@ func (sh *Show) follow(ctx context.Context, hue *Hue, app *App) {
 	defer tick.Stop()
 	lastBeat := int64(math.MinInt64)
 	lastIdle, idleNext := time.Time{}, 0
+	wasPaused := false
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case now := <-tick.C:
-			if !app.streaming.Load() {
+			// Paused: put the followers back as they were, once any command
+			// already on its way has landed. Started again: note how they
+			// are now, to put them back to that later.
+			if p := app.isPaused(); p != wasPaused {
+				wasPaused = p
+				if p {
+					time.Sleep(400 * time.Millisecond)
+					for id, st := range before {
+						hue.RestoreLight(id, st)
+					}
+				} else {
+					before = hue.LightStates(ids)
+				}
+			}
+			if wasPaused || !app.streaming.Load() {
 				continue // standing by: leave the lights to whoever is driving
 			}
 			s := app.store.Settings()
@@ -261,7 +276,7 @@ func (sh *Show) follow(ctx context.Context, hue *Hue, app *App) {
 				floor := math.Min(math.Max(s.Floor, 0.01), peak)
 				send(func() { set(id, c, peak, 0) })
 				time.AfterFunc(110*time.Millisecond, func() {
-					if ctx.Err() == nil {
+					if ctx.Err() == nil && !app.isPaused() {
 						send(func() { set(id, c, floor, fade) })
 					}
 				})

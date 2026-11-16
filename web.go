@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -31,6 +32,46 @@ type App struct {
 	started     time.Time
 	streaming   atomic.Bool
 	lastErr     atomic.Value // string: why the light stream last stopped
+
+	pmu     sync.Mutex
+	paused  bool          // the lights are handed back until the page starts the sync again
+	pchange chan struct{} // closed, and replaced, each time paused changes
+}
+
+// pauseState reports whether the sync is paused, with a channel that is
+// closed the next time that changes.
+func (a *App) pauseState() (bool, <-chan struct{}) {
+	a.pmu.Lock()
+	defer a.pmu.Unlock()
+	if a.pchange == nil {
+		a.pchange = make(chan struct{})
+	}
+	return a.paused, a.pchange
+}
+
+func (a *App) isPaused() bool {
+	p, _ := a.pauseState()
+	return p
+}
+
+// setPaused pauses or restarts the sync and remembers the choice, so a
+// paused copy is still paused after a restart.
+func (a *App) setPaused(p bool) error {
+	a.pmu.Lock()
+	if a.paused == p {
+		a.pmu.Unlock()
+		return nil
+	}
+	a.paused = p
+	if a.pchange != nil {
+		close(a.pchange)
+	}
+	a.pchange = make(chan struct{})
+	a.pmu.Unlock()
+	if a.store == nil {
+		return nil
+	}
+	return a.store.Update(func(c *Config) { c.Paused = p })
 }
 
 func (a *App) errText() string {
@@ -44,6 +85,7 @@ type statusJSON struct {
 	BPM       float64      `json:"bpm"`
 	BeatInBar int          `json:"beat_in_bar"`
 	Streaming bool         `json:"streaming"`
+	Paused    bool         `json:"paused"`
 	GearLost  bool         `json:"gear_lost"` // no deck or mixer heard, and we have been up long enough to expect one
 	Error     string       `json:"error"`
 	Area      string       `json:"area"`
@@ -227,6 +269,7 @@ func (a *App) handler() http.Handler {
 		if a.link != nil {
 			link.Active, link.Number, link.Note = a.link.Info()
 		}
+		paused, _ := a.pauseState()
 		phrase := phraseJSON{Known: ph.PhraseKnown, Label: ph.PhraseLabel, Energy: ph.Energy, Beat: ph.PhraseBeat, TrackBeat: ph.TrackBeat}
 		if ph.Structure != nil {
 			phrase.Phrases = len(ph.Structure.Phrases)
@@ -236,13 +279,31 @@ func (a *App) handler() http.Handler {
 			"settings": s,
 			"status": statusJSON{
 				Locked: ph.Locked, Player: ph.Player, BPM: math.Round(ph.BPM*100) / 100, BeatInBar: ph.BeatInBar,
-				Streaming: a.streaming.Load(), Error: a.errText(), Area: strings.Join(a.show.Load().names, " + "), Channels: len(a.show.Load().engine.chans),
+				Streaming: a.streaming.Load(), Paused: paused, Error: a.errText(), Area: strings.Join(a.show.Load().names, " + "), Channels: len(a.show.Load().engine.chans),
 				GearLost: len(devices) == 0 && now.Sub(a.started) > 10*time.Second,
 				Devices:  devices, Decks: a.tracker.Decks(now, s),
 				Lights: a.lights(now, ph, s),
 				Link:   link, Phrase: phrase, Viz: a.viz(now, ph, s),
 			},
 		})
+	})
+	mux.HandleFunc("/api/pause", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST only", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Paused bool `json:"paused"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := a.setPaused(req.Paused); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]bool{"paused": req.Paused})
 	})
 	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

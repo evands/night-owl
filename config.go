@@ -174,6 +174,7 @@ type Config struct {
 	Presets   []Preset `json:"presets"`
 	Preset    string   `json:"preset"` // name of the preset last applied or saved
 	Areas     []string `json:"areas"`  // ids of every selected Entertainment area; empty means just AreaID
+	Paused    bool     `json:"paused"` // the lights are handed back until the page starts the sync again
 }
 
 // Store guards the config and persists changes.

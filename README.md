@@ -175,6 +175,11 @@ Open `http://<the computer's address>:8600` on any device on the network.
 Changes apply instantly, are saved, and show up on every other open copy
 of the page.
 
+- **Pause / Start:** the button at the top. Pause hands the lights back
+  to how they were and leaves them alone; Start takes them again. The
+  choice is remembered, so a paused copy is still paused after a restart.
+  If another copy is standing by (see "Several computers"), it takes the
+  lights when this one pauses.
 - **Preset:** the whole look in one menu. *Save* stores your changes into
   the current preset, *Save as* makes a new one, *Rename* and *Delete* do
   what they say. A preset holds colours, effect, brightness, pulse shape,

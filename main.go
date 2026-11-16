@@ -425,6 +425,7 @@ func run(store *Store, bridgeIP, uiAddr string, open, takeover, retry bool, link
 	}
 	app := &App{hue: hue, reconfig: make(chan struct{}, 1), store: store, dj: dj, tracker: tracker, link: tracker.link, linkAllowed: true, started: time.Now()}
 	app.show.Store(first)
+	app.paused = store.Config().Paused
 	// Only the copy that is driving the lights joins the DJ network. A copy
 	// standing by has no use for it, and the decks see one extra player
 	// instead of several.
@@ -432,6 +433,8 @@ func run(store *Store, bridgeIP, uiAddr string, open, takeover, retry bool, link
 		switch {
 		case !store.Settings().DeckLink:
 			return false, "off"
+		case app.isPaused():
+			return false, "on, but paused: it joins again when the sync is started"
 		case !app.streaming.Load():
 			return false, "on, but waiting: it joins when this copy is driving the lights"
 		}
@@ -473,23 +476,51 @@ func run(store *Store, bridgeIP, uiAddr string, open, takeover, retry bool, link
 		followed := make(chan struct{})
 		go func() { sh.follow(sctx, hue, app); close(followed) }()
 		for sctx.Err() == nil {
-			err := stream(sctx, hue, app, sh, takeover)
+			// Paused from the control page: leave the lights alone until it
+			// is started again, then take them as a freshly started copy would.
+			paused, changed := app.pauseState()
+			if paused {
+				app.lastErr.Store("")
+				select {
+				case <-sctx.Done():
+				case <-changed:
+					log.Printf("started again from the control page")
+					takeover = true
+				}
+				continue
+			}
+			pctx, unpause := context.WithCancel(sctx)
+			go func() {
+				select {
+				case <-changed:
+					unpause()
+				case <-pctx.Done():
+				}
+			}()
+			err := stream(pctx, hue, app, sh, takeover)
+			unpause()
 			takeover = false
 			app.streaming.Store(false)
 			if sctx.Err() != nil {
 				break
+			}
+			if app.isPaused() {
+				_ = hue.StopStream(sh.stream.ID)
+				log.Printf("paused from the control page: the lights are handed back")
+				continue
 			}
 			if err != nil {
 				app.lastErr.Store(err.Error())
 			}
 			if errors.Is(err, errBusy) {
 				log.Printf("another app is driving these lights: waiting for it to finish")
-				for sctx.Err() == nil {
+				for sctx.Err() == nil && !app.isPaused() {
 					if state, serr := hue.AreaState(sh.stream.ID); serr == nil && state != "other" {
 						break
 					}
 					select {
 					case <-sctx.Done():
+					case <-changed:
 					case <-time.After(3 * time.Second):
 					}
 				}
@@ -498,6 +529,7 @@ func run(store *Store, bridgeIP, uiAddr string, open, takeover, retry bool, link
 			log.Printf("light stream stopped (%v); retrying in 2 s", err)
 			select {
 			case <-sctx.Done():
+			case <-changed:
 			case <-time.After(2 * time.Second):
 			}
 		}
